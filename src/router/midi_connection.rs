@@ -1,29 +1,57 @@
-use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use std::thread;
-use std::time::Duration;
-use anyhow::{anyhow, format_err, Context, Result};
-use log::{debug, info, trace, warn};
-use midir::{MidiInput, MidiOutput, MidiIO, MidiOutputConnection};
-use wmidi::{Channel, ControlFunction, MidiMessage, MidiMessage::{ControlChange, NoteOn, NoteOff}, Note, Velocity, U7};
-use crate::LED_ON;
-use crate::router::{input_connection::InputConnection, output_connection::OutputConnection};
+use crate::router::{input_connection::{InputConnection, InputMessage::{ControllerMessage, SoftwareMessage}}, output_connection::OutputConnection, midi_handler::MidiHandler};
+use anyhow::{Context, Result};
+use log::info;
+use midir::{MidiIO, MidiInput, MidiInputPort, MidiOutput, MidiOutputPort};
 
 pub struct MidiRouter {
     from_controller_connection: InputConnection,
-    to_controller_connection: OutputConnection,
+    to_controller_connection: Arc<Mutex<OutputConnection>>,
     from_software_connection: InputConnection,
-    to_software_connection: OutputConnection,
-    states_map: Arc<Mutex<HashMap<u8, Vec<bool>>>>,
-    color_map: Arc<Mutex<HashMap<u8, Vec<u8>>>>,
-    toggle_notes: Vec<u8>,
-    note_map: Vec<(u8, Vec<u8>)>,
-    control_map: Vec<(u8, Vec<u8>)>,
-    default_channel: Arc<Mutex<Channel>>
+    to_software_connection: Arc<Mutex<OutputConnection>>,
+    midi_handler: Arc<Mutex<MidiHandler>>,
+}
+
+struct MidiConnections {
+    from_controller_name: String,
+    to_controller_name: String,
+    from_software_name: String,
+    to_software_name: String,
+
+    from_controller_midi: MidiInput,
+    to_controller_midi: MidiOutput,
+    from_software_midi: MidiInput,
+    to_software_midi: MidiOutput,
+
+    from_controller_port: MidiInputPort,
+    to_controller_port: MidiOutputPort,
+    from_software_port: MidiInputPort,
+    to_software_port: MidiOutputPort,
 }
 
 impl MidiRouter {
+    pub fn new() -> Self {
+        Self {
+            from_controller_connection: InputConnection::new(),
+            to_controller_connection: Arc::new(Mutex::new(OutputConnection::new())),
+            from_software_connection: InputConnection::new(),
+            to_software_connection: Arc::new(Mutex::new(OutputConnection::new())),
+            midi_handler: Arc::new(Mutex::new(MidiHandler::new())),
+        }
+    }
+
     pub fn connect(&mut self, controller_name: &str, software_name: &str) -> Result<()> {
+        let connections = self.setup_midi_connections(controller_name, software_name)?;
+
+        self.connect_midi_devices(connections)?;
+        Ok(())
+    }
+
+    fn setup_midi_connections(
+        &self,
+        controller_name: &str,
+        software_name: &str,
+    ) -> Result<MidiConnections> {
         let from_software_midi_name = format!("from_{}", software_name);
         let to_software_midi_name = format!("to_{}", software_name);
 
@@ -32,173 +60,133 @@ impl MidiRouter {
         let from_software_name = format!("{}-router-input", software_name.to_lowercase());
         let to_software_name = format!("{}-router-output", software_name.to_lowercase());
 
-        let from_controller = MidiInput::new(from_controller_name.as_str())?;
-        let to_controller = MidiOutput::new(to_controller_name.as_str())?;
-        let from_software = MidiInput::new(from_software_name.as_str())?;
-        let to_software = MidiOutput::new(to_software_name.as_str())?;
+        let from_controller_midi = MidiInput::new(&from_controller_name)?;
+        let to_controller_midi = MidiOutput::new(&to_controller_name)?;
+        let from_software_midi = MidiInput::new(&from_software_name)?;
+        let to_software_midi = MidiOutput::new(&to_software_name)?;
 
-        let from_controller_ports = from_controller.ports();
-        let to_controller_ports = to_controller.ports();
-        let from_software_ports = from_software.ports();
-        let to_software_ports = to_software.ports();
+        let from_controller_ports = from_controller_midi.ports();
+        let to_controller_ports = to_controller_midi.ports();
+        let from_software_ports = from_software_midi.ports();
+        let to_software_ports = to_software_midi.ports();
 
-        let from_controller_port = &Self::find_port(&from_controller, &from_controller_ports, controller_name)?;
-        let to_controller_port = &Self::find_port(&to_controller, &to_controller_ports, controller_name)?;
-        let from_software_port = &Self::find_port(&from_software, &from_software_ports, from_software_midi_name.as_str())?;
-        let to_software_port = &Self::find_port(&to_software, &to_software_ports, to_software_midi_name.as_str())?;
+        let from_controller_port = find_port(
+            &from_controller_midi,
+            &from_controller_ports,
+            controller_name,
+        )?;
+        let to_controller_port = find_port(
+            &to_controller_midi,
+            &to_controller_ports,
+            controller_name
+        )?;
+        let from_software_port = find_port(
+            &from_software_midi,
+            &from_software_ports,
+            &from_software_midi_name,
+        )?;
+        let to_software_port = find_port(
+            &to_software_midi,
+            &to_software_ports,
+            &to_software_midi_name,
+        )?;
 
-        info!("Using MIDI input: {}", from_controller.port_name(from_controller_port)?);
-        info!("Using MIDI feedback output: {}", to_controller.port_name(to_controller_port)?);
-        info!("Using Daslight feedback input: {}", from_software.port_name(from_software_port)?);
-        info!("Using Daslight output: {}", to_software.port_name(to_software_port)?);
+        fn find_port<P: MidiIO>(midi_io: &P, ports: &[P::Port], name: &str) -> Result<P::Port> {
+            ports
+                .iter()
+                .find(|port| {
+                    midi_io
+                        .port_name(port)
+                        .map(|n| n.contains(name))
+                        .unwrap_or(false)
+                })
+                .cloned()
+                .context(format!(
+                    "Could not find a MIDI device containing '{}'",
+                    name
+                ))
+        }
 
-        let from_controller_connection = &mut self.from_controller_connection;
-        let to_controller_connection = &self.to_controller_connection;
-        let from_software_connection = &mut self.from_software_connection;
-        let to_software_connection = &self.to_software_connection;
+        info!(
+            "Using Controller input: {}",
+            from_controller_midi.port_name(&from_controller_port)?
+        );
+        info!(
+            "Using Controller feedback output: {}",
+            to_controller_midi.port_name(&to_controller_port)?
+        );
+        info!(
+            "Using Software feedback input: {}",
+            from_software_midi.port_name(&from_software_port)?
+        );
+        info!(
+            "Using Software output: {}",
+            to_software_midi.port_name(&to_software_port)?
+        );
 
-        let mut states_map = Arc::clone(&self.states_map);
-        let mut color_map = Arc::clone(&self.color_map);
-        let toggle_notes = &self.toggle_notes;
-        let note_map = &self.note_map;
-        let control_map = &self.control_map;
-        let mut new_channel = Arc::clone(&self.default_channel);
-
-        from_controller_connection.handle(
-            Self::handle_controller,
-            from_controller,
-            from_controller_port,
+        Ok(MidiConnections {
             from_controller_name,
-            to_controller_connection,
-            to_software_connection,
-            &mut states_map,
-            &mut color_map,
-            &toggle_notes,
-            &note_map,
-            &control_map,
-            &mut new_channel
-        )?;
-        to_controller_connection.lock(to_controller, to_controller_port, to_controller_name)?;
-        from_software_connection.handle(
-            Self::handle_software,
-            from_software,
-            from_software_port,
+            to_controller_name,
             from_software_name,
-            to_controller_connection,
-            to_software_connection,
-            &mut states_map,
-            &mut color_map,
-            &toggle_notes,
-            &note_map,
-            &control_map,
-            &mut new_channel
+            to_software_name,
+
+            from_controller_midi,
+            to_controller_midi,
+            from_software_midi,
+            to_software_midi,
+
+            from_controller_port,
+            to_controller_port,
+            from_software_port,
+            to_software_port,
+        })
+    }
+
+    fn connect_midi_devices(&mut self, connections: MidiConnections) -> Result<()> {
+        let handler = Arc::clone(&self.midi_handler);
+        let to_controller = Arc::clone(&self.to_controller_connection);
+        let to_software = Arc::clone(&self.to_software_connection);
+
+        self.from_controller_connection.connect(
+            &connections.from_controller_name,
+            connections.from_controller_midi,
+            &connections.from_controller_port,
+            handler.clone(),
+            to_controller.clone(),
+            to_software.clone(),
+            ControllerMessage,
         )?;
-        to_software_connection.lock(to_software, to_software_port, to_software_name)?;
-        
+
+        {
+            let mut to_controller_lock = to_controller.lock().unwrap();
+            to_controller_lock.connect(
+                &connections.to_controller_name,
+                connections.to_controller_midi,
+                &connections.to_controller_port,
+            )?;
+        }
+
+        self.from_software_connection.connect(
+            &connections.from_software_name,
+            connections.from_software_midi,
+            &connections.from_software_port,
+            handler,
+            to_controller,
+            to_software,
+            SoftwareMessage,
+        )?;
+
+        let mut to_software_lock = self.to_software_connection.lock().unwrap();
+        to_software_lock.connect(
+            &connections.to_software_name,
+            connections.to_software_midi,
+            &connections.to_software_port,
+        )?;
+
         Ok(())
     }
 
-    pub fn new() -> Self {
-        let from_controller_connection = InputConnection::new();
-        let to_controller_connection = OutputConnection::new();
-        let from_software_connection = InputConnection::new();
-        let to_software_connection = OutputConnection::new();
-
-        Self {
-            from_controller_connection,
-            to_controller_connection,
-            from_software_connection,
-            to_software_connection,
-            states_map: Arc::new(Mutex::new((0..=8).map(|i| (i, vec![false; 128])).collect::<HashMap<_, _>>())),
-            color_map: Arc::new(Mutex::new((0..=8).map(|i| (i, vec![0; 128])).collect::<HashMap<_, _>>())),
-            toggle_notes: vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 81, 82, 83, 84, 85, 86, 105, 106, 107, 108, 109, 110, 111, 112],
-            note_map: vec![
-                (48, vec![40, 41, 42, 43, 44, 45, 46, 47]),
-                (49, vec![68, 69, 70, 71, 72, 73, 74, 75]),
-                (50, vec![53, 54, 55, 56, 76, 77, 78, 79]),
-                (52, vec![105, 106, 107, 108, 109, 110, 111, 112]),
-                (66, vec![113, 114, 115, 116, 117, 118, 119, 120])
-            ],
-            control_map: vec![
-                (7, vec![0, 1, 2, 3, 4, 5, 9, 10])
-            ],
-            default_channel: Arc::new(Mutex::new(Channel::Ch1)),
-        }
-    }
-
-    fn find_port<P: MidiIO> (midi_io: &P, ports: &[P::Port], name: &str) -> Result<P::Port> {
-        ports
-            .iter()
-            .find(|port| {
-                midi_io
-                    .port_name(port)
-                    .map(|n| n.contains(name))
-                    .unwrap_or(false)
-            })
-            .cloned()
-            .context(format!("Could not find a MIDI device containing '{}'", name))
-    }
-
-    fn handle_controller(
-        _stamp: u64,
-        message: &[u8],
-        to_controller_connection: &OutputConnection,
-        to_software_connection: &OutputConnection,
-        states_map: &mut Arc<Mutex<HashMap<u8, Vec<bool>>>>,
-        color_map: &mut Arc<Mutex<HashMap<u8, Vec<u8>>>>,
-        toggle_notes: &Vec<u8>,
-        note_map: &Vec<(u8, Vec<u8>)>,
-        control_map: &Vec<(u8, Vec<u8>)>,
-        new_channel: &mut Arc<Mutex<Channel>>
-    ) -> Result<()> {
-        // Check if the message is empty and if its MIDI message
-        if message.is_empty() {
-            return Ok(());
-        }
-
-        let midi_message = MidiMessage::try_from(message)
-            .map_err(|err| anyhow!("Failed to parse a MIDI message: {}", err))?;
-
-        trace!("Controller: {:?}", midi_message);
-
-        // Lock the new_channel to safely read and modify (Multi-threading safety)
-        let mut new_channel_lock = new_channel.lock().map_err(|err| format_err!("{}", err))?;
-
-        // Check if it is a Site Change
-        if let ControlChange(channel, control, _) = midi_message {
-            if u8::from(control) == 16 { // 16 is the first knob that sends a signal on changing the site
-                if channel != *new_channel_lock {
-                    *new_channel_lock = channel;
-
-                    // Lock the states_map and color_map to safely read and modify them (Multi-threading safety)
-                    let mut states_map_lock = states_map.lock().map_err(|err| format_err!("{}", err))?;
-                    let mut color_map_lock = color_map.lock().map_err(|err| format_err!("{}", err))?;
-
-                    if let Some(states_map) = states_map_lock.get_mut(&new_channel_lock.index()) {
-                        if let Some(color_map) = color_map_lock.get_mut(&new_channel_lock.index()) {
-                            Self::refresh_leds(to_controller_connection, states_map, color_map, toggle_notes)?;
-                        };
-                    };
-
-                    // Drop the locked maps to allow other threads to access them (Not Needed in this case, but safety firsts)
-                    drop(states_map_lock);
-                    drop(color_map_lock);
-
-                    debug!("New Site: {}", format!("{:?}", channel).replace("Ch", ""));
-                }
-            }
-        }
-
-        // Process the MIDI message
-        Self::match_controller_message(to_controller_connection, to_software_connection, states_map, color_map, toggle_notes, note_map, control_map, &*new_channel_lock, midi_message, message)?;
-
-        // Drop the locked channel to allow other threads to access them (Not Needed in this case, but safety firsts)
-        drop(new_channel_lock);
-        
-        Ok(())
-    }
-
-    fn handle_software(
+    /*fn handle_software(
         _stamp: u64,
         message: &[u8],
         to_controller_connection: &OutputConnection,
@@ -224,9 +212,9 @@ impl MidiRouter {
         Self::match_software_message(to_controller_connection, states_map, color_map, toggle_notes, midi_message)?;
 
         Ok(())
-    }
+    }*/
 
-    fn match_controller_message(
+    /*fn match_controller_message(
         to_controller_connection: &OutputConnection,
         to_software_connection: &OutputConnection,
         states_map: &mut Arc<Mutex<HashMap<u8, Vec<bool>>>>,
@@ -250,7 +238,7 @@ impl MidiRouter {
                     warn!("Toggle notes doesn't include note: {}", new_note);
                 };
             }
-            
+
             NoteOff(channel, note, _velocity) => {
                 // Remap the note and check if it is a toggle note
                 let new_note = Self::remap_note(note_map, &channel, note)?;
@@ -449,7 +437,7 @@ impl MidiRouter {
 
         // Drop the locked connection to allow other threads to access them (Not Needed in this case, but safety firsts)
         drop(output_connection_lock);
-        
+
         Ok(())
     }
 
@@ -489,8 +477,5 @@ impl MidiRouter {
 
         // If no remapping is found, return the original control
         Ok(control)
-    }
+    }*/
 }
-
-
-

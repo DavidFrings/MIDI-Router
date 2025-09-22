@@ -1,25 +1,20 @@
-use std::sync::{Arc, Mutex};
-use anyhow::{format_err, Result};
+use anyhow::Result;
 use midir::{MidiOutput, MidiOutputConnection, MidiOutputPort};
 
 pub struct OutputConnection {
-    pub connection: Arc<Mutex<Option<MidiOutputConnection>>>
+    pub connection: Option<MidiOutputConnection>,
 }
 
 impl OutputConnection {
     pub fn new() -> Self {
-        Self {
-            connection: Arc::new(Mutex::new(None))
-        }
+        Self { connection: None }
     }
 
-    pub fn lock(&self, midi_io: MidiOutput, port: &MidiOutputPort, name: String) -> Result<()> {
-        let connection = midi_io.connect(port, name.as_str())?;
+    pub fn connect(&mut self, name: &str, midi: MidiOutput, port: &MidiOutputPort) -> Result<()> {
+        let connection = midi.connect(port, name)?;
 
-        {
-            let mut midi = self.connection.lock().map_err(|err| format_err!("{}", err))?;
-            *midi = Some(connection);
-        }
+        let self_connection = &mut self.connection;
+        *self_connection = Some(connection);
 
         Ok(())
     }
