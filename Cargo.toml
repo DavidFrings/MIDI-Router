@@ -1,7 +1,7 @@
 [package]
 name = "apc40mk2-router"
 authors = ["David Frings <dev@davidfrings.dev> (https://DavidFrings.dev)"]
-version = "0.2.0"
+version = "0.2.1"
 description = "MIDI Router for APC40 MK2 to route banks"
 license = "MPL-2.0"
 rust-version = "1.87"
