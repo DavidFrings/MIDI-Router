@@ -56,7 +56,8 @@ async fn main() -> Result<()> {
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
 
     // Check for updates
-    //update().await.expect("Failed to check for updates"); // Disable for dev!
+    info!("Checking for updates...");
+    update().await.expect("Failed to check for updates"); // Disable for dev!
 
     let args = Args::parse();
 
