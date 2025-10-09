@@ -17,7 +17,7 @@ async fn main() -> Result<()> {
     let client = Client::new();
     let res = client.get(download_url).send().await?.bytes().await?;
 
-    let exe_path = "apc40mk2-router.exe";
+    let exe_path = "midi-router.exe";
     fs::write(&exe_path, &res)?;
 
     Command::new(exe_path).spawn()?;
