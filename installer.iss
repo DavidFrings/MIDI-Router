@@ -16,10 +16,10 @@ UninstallDisplayIcon={app}\{#MyAppExeName}
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 DisableProgramGroupPage=yes
-LicenseFile={#ProjectDir}LICENSE
-InfoAfterFile={#ProjectDir}install-readme.txt
+LicenseFile={#ProjectDir}\LICENSE
+InfoAfterFile={#ProjectDir}\install-readme.txt
 PrivilegesRequiredOverridesAllowed=dialog
-OutputDir={#ProjectDir}
+OutputDir={#ProjectDir}\
 OutputBaseFilename=midi-router-installer
 SolidCompression=yes
 WizardStyle=modern
@@ -29,8 +29,8 @@ Name: "german"; MessagesFile: "compiler:Languages\German.isl"
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 [Files]
-Source: "{#ProjectDir}target\release\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#ProjectDir}target\release\updater.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#ProjectDir}\target\release\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#ProjectDir}\target\release\updater.exe"; DestDir: "{app}"; Flags: ignoreversion
 [Icons]
 Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
