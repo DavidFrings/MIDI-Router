@@ -65,7 +65,12 @@ impl StateManager {
         Err(format_err!(""))
     }
 
-    pub fn set_note_color(&mut self, bank: &Channel, note: Note, new_color: Velocity) -> Result<()> {
+    pub fn set_note_color(
+        &mut self,
+        bank: &Channel,
+        note: Note,
+        new_color: Velocity,
+    ) -> Result<()> {
         let color_map = &mut self.color_map;
 
         if let Some(color) = color_map

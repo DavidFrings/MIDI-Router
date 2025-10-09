@@ -1,11 +1,14 @@
-use anyhow::{Result};
+use crate::router::{
+    led_controller::LedController, mapping_config::MappingConfig,
+    output_connection::OutputConnection, state_manager::StateManager,
+};
+use anyhow::Result;
 use log::{debug, trace, warn};
 use wmidi::{
     Channel, MidiMessage,
     MidiMessage::{ControlChange, NoteOff, NoteOn},
     Note, Velocity,
 };
-use crate::router::{led_controller::LedController, mapping_config::MappingConfig, output_connection::OutputConnection, state_manager::StateManager };
 
 pub struct MidiHandler {
     state_manager: StateManager,
@@ -26,7 +29,12 @@ impl MidiHandler {
         &self.state_manager
     }
 
-    pub fn handle_controller_msg(&mut self, msg: MidiMessage, to_controller_connection: &mut OutputConnection, to_software_connection: &mut OutputConnection) -> Result<()> {
+    pub fn handle_controller_msg(
+        &mut self,
+        msg: MidiMessage,
+        to_controller_connection: &mut OutputConnection,
+        to_software_connection: &mut OutputConnection,
+    ) -> Result<()> {
         trace!("Received MIDI message from Controller: {:?}", msg);
 
         self.handle_site_change(&msg, to_controller_connection)?; // Check if user wants to change site
@@ -35,7 +43,11 @@ impl MidiHandler {
         Ok(())
     }
 
-    pub fn handle_software_msg(&mut self, msg: MidiMessage, to_controller_connection: &mut OutputConnection) -> Result<()> {
+    pub fn handle_software_msg(
+        &mut self,
+        msg: MidiMessage,
+        to_controller_connection: &mut OutputConnection,
+    ) -> Result<()> {
         trace!("Received MIDI message from Software: {:?}", msg);
 
         self.process_software_message(msg, to_controller_connection)?;
@@ -43,7 +55,11 @@ impl MidiHandler {
         Ok(())
     }
 
-    fn handle_site_change(&mut self, msg: &MidiMessage, to_controller_connection: &mut OutputConnection) -> Result<()> {
+    fn handle_site_change(
+        &mut self,
+        msg: &MidiMessage,
+        to_controller_connection: &mut OutputConnection,
+    ) -> Result<()> {
         if let ControlChange(channel, control, _velocity) = msg {
             if u8::from(*control) == 16 {
                 let current_bank = self.state_manager.get_current_bank();
@@ -86,7 +102,10 @@ impl MidiHandler {
                         velocity,
                     )?;
                 } else {
-                    warn!("Toggle notes doesn't include note: {}", remapped_note);
+                    warn!(
+                        "Toggle notes doesn't include note (Controller On): {}",
+                        u8::from(remapped_note)
+                    );
                 }
             }
 
@@ -101,7 +120,10 @@ impl MidiHandler {
                         remapped_note,
                     )?;
                 } else {
-                    warn!("Toggle notes doesn't include note: {}", remapped_note);
+                    warn!(
+                        "Toggle notes doesn't include note (Controller Off): {}",
+                        u8::from(remapped_note)
+                    );
                 }
             }
 
@@ -138,7 +160,10 @@ impl MidiHandler {
                         note,
                     )?;
                 } else {
-                    warn!("Toggle notes doesn't include note: {}", note);
+                    warn!(
+                        "Toggle notes doesn't include note (Software On): {}",
+                        u8::from(note)
+                    );
                 }
             }
 
@@ -153,7 +178,10 @@ impl MidiHandler {
                         note,
                     )?;
                 } else {
-                    warn!("Toggle notes doesn't include note: {}", note);
+                    warn!(
+                        "Toggle notes doesn't include note (Software Off): {}",
+                        u8::from(note)
+                    );
                 }
             }
 

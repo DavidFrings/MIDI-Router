@@ -1,8 +1,15 @@
-use std::sync::{Arc, Mutex};
-use crate::router::{input_connection::{InputConnection, InputMessage::{ControllerMessage, SoftwareMessage}}, output_connection::OutputConnection, midi_handler::MidiHandler};
+use crate::router::{
+    input_connection::{
+        InputConnection,
+        InputMessage::{ControllerMessage, SoftwareMessage},
+    },
+    midi_handler::MidiHandler,
+    output_connection::OutputConnection,
+};
 use anyhow::{Context, Result};
 use log::info;
 use midir::{MidiIO, MidiInput, MidiInputPort, MidiOutput, MidiOutputPort};
+use std::sync::{Arc, Mutex};
 
 pub struct MidiRouter {
     from_controller_connection: InputConnection,
@@ -75,11 +82,8 @@ impl MidiRouter {
             &from_controller_ports,
             controller_name,
         )?;
-        let to_controller_port = find_port(
-            &to_controller_midi,
-            &to_controller_ports,
-            controller_name
-        )?;
+        let to_controller_port =
+            find_port(&to_controller_midi, &to_controller_ports, controller_name)?;
         let from_software_port = find_port(
             &from_software_midi,
             &from_software_ports,

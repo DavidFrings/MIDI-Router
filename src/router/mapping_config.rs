@@ -34,11 +34,7 @@ impl MappingConfig {
         &self.toggle_notes
     }
 
-    pub fn remap_note(
-        &self, 
-        channel: &Channel, 
-        conn_note: Note
-    ) -> Result<Note> {
+    pub fn remap_note(&self, channel: &Channel, conn_note: Note) -> Result<Note> {
         for (original_note, remapped_notes) in &self.note_map {
             if *original_note == u8::from(conn_note) {
                 if (channel.index() as usize) < remapped_notes.len() {

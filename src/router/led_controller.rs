@@ -1,7 +1,7 @@
+use crate::router::{output_connection::OutputConnection, state_manager::StateManager};
 use anyhow::Result;
 use std::{thread, time::Duration};
 use wmidi::{Channel, MidiMessage, MidiMessage::NoteOn, Note, Velocity};
-use crate::router::{output_connection::OutputConnection, state_manager::StateManager};
 
 pub struct LedController;
 
