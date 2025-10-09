@@ -111,10 +111,11 @@ The compiled executable will be available in `target/release/`.
 
 ## Roadmap
 
-- [ ] REST API for controlling Daslight
 - [ ] Installer (`.exe` or `.msi`)
-- [ ] Additional controller support
 - [ ] Configuration file support
+- [ ] Ratatui implementation
+- [ ] REST API for controlling Daslight
+- [ ] Additional controller support
 - [ ] Check for LoopMIDI running (disablable with arguments)
 
 ## Development Status
