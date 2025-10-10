@@ -6,8 +6,8 @@ use crate::router::{
     midi_handler::MidiHandler,
     output_connection::OutputConnection,
 };
-use anyhow::{Context, Result};
-use log::info;
+use anyhow::{Context, Result, anyhow, format_err};
+use log::{error, info, warn};
 use midir::{MidiIO, MidiInput, MidiInputPort, MidiOutput, MidiOutputPort};
 use std::sync::{Arc, Mutex};
 
@@ -67,16 +67,23 @@ impl MidiRouter {
         let from_software_name = format!("{}-router-input", software_name.to_lowercase());
         let to_software_name = format!("{}-router-output", software_name.to_lowercase());
 
-        let from_controller_midi = MidiInput::new(&from_controller_name)?;
-        let to_controller_midi = MidiOutput::new(&to_controller_name)?;
-        let from_software_midi = MidiInput::new(&from_software_name)?;
-        let to_software_midi = MidiOutput::new(&to_software_name)?;
+        // Create MIDI interfaces
+        let from_controller_midi = MidiInput::new(&from_controller_name)
+            .context("Failed to create controller MIDI input")?;
+        let to_controller_midi = MidiOutput::new(&to_controller_name)
+            .context("Failed to create controller MIDI output")?;
+        let from_software_midi =
+            MidiInput::new(&from_software_name).context("Failed to create software MIDI input")?;
+        let to_software_midi =
+            MidiOutput::new(&to_software_name).context("Failed to create software MIDI output")?;
 
+        // Fetch ports
         let from_controller_ports = from_controller_midi.ports();
         let to_controller_ports = to_controller_midi.ports();
         let from_software_ports = from_software_midi.ports();
         let to_software_ports = to_software_midi.ports();
 
+        // Try to get ports (gracefully)
         let from_controller_port = find_port(
             &from_controller_midi,
             &from_controller_ports,
@@ -95,20 +102,23 @@ impl MidiRouter {
             &to_software_midi_name,
         )?;
 
+        /// Helper to safely find a port (with fallback + warning)
         fn find_port<P: MidiIO>(midi_io: &P, ports: &[P::Port], name: &str) -> Result<P::Port> {
-            ports
-                .iter()
-                .find(|port| {
-                    midi_io
-                        .port_name(port)
-                        .map(|n| n.contains(name))
-                        .unwrap_or(false)
-                })
-                .cloned()
-                .context(format!(
-                    "Could not find a MIDI device containing '{}'",
-                    name
-                ))
+            if ports.is_empty() {
+                return Err(anyhow!("No MIDI ports available for '{}'", name));
+            }
+
+            if let Some(port) = ports.iter().find(|port| {
+                midi_io
+                    .port_name(port)
+                    .map(|n| n.to_lowercase().contains(&name.to_lowercase()))
+                    .unwrap_or(false)
+            }) {
+                Ok(port.clone())
+            } else {
+                warn!("No matching port for '{}', using first available.", name);
+                Ok(ports[0].clone())
+            }
         }
 
         info!(
