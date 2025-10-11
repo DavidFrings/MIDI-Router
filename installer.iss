@@ -3,7 +3,7 @@
 #define MyAppURL "https://github.com/DavidFrings/MIDI-Router"
 #define MyAppExeName "midi-router.exe"
 [Setup]
-AppId={{86E22B5D-90BD-4322-8068-50483B44A96B}
+AppId={{86E22B5D-90BD-4322-8068-50483B44A96B}}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppVerName={#MyAppName} {#MyAppVersion}
@@ -31,6 +31,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Files]
 Source: "{#ProjectDir}\target\release\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#ProjectDir}\target\release\updater.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#ProjectDir}\config.toml"; DestDir: "{app}"; Flags: ignoreversion
 [Icons]
 Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
