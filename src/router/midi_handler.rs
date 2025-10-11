@@ -17,12 +17,12 @@ pub struct MidiHandler {
 }
 
 impl MidiHandler {
-    pub fn new() -> Self {
-        Self {
+    pub fn new() -> Result<Self> {
+        Ok(Self {
             state_manager: StateManager::new(),
-            mapping_config: MappingConfig::new(),
+            mapping_config: MappingConfig::new()?,
             led_controller: LedController::new(),
-        }
+        })
     }
 
     pub fn get_state_manager(&self) -> &StateManager {

@@ -37,14 +37,14 @@ struct MidiConnections {
 }
 
 impl MidiRouter {
-    pub fn new() -> Self {
-        Self {
+    pub fn new() -> Result<Self> {
+        Ok(Self {
             from_controller_connection: InputConnection::new(),
             to_controller_connection: Arc::new(Mutex::new(OutputConnection::new())),
             from_software_connection: InputConnection::new(),
             to_software_connection: Arc::new(Mutex::new(OutputConnection::new())),
-            midi_handler: Arc::new(Mutex::new(MidiHandler::new())),
-        }
+            midi_handler: Arc::new(Mutex::new(MidiHandler::new()?)),
+        })
     }
 
     pub fn connect(&mut self, controller_name: &str, software_name: &str) -> Result<()> {

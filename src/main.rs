@@ -92,7 +92,14 @@ fn router_thread(
             }
 
             debug!("Starting MIDIRouter...");
-            let mut router = MidiRouter::new();
+            let mut router = match MidiRouter::new() {
+                Ok(router) => router,
+                Err(err) => {
+                    error!("MIDIRouter failed: {}", err);
+                    thread::sleep(Duration::from_secs(1));
+                    continue;
+                }
+            };
             match MidiRouter::connect(&mut router, &controller, &software) {
                 Ok(_) => info!("Started MIDIRouter..."),
                 Err(err) => error!("MIDIRouter failed: {}", err),
