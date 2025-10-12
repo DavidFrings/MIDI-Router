@@ -1,38 +1,29 @@
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use std::fs;
 use wmidi::{Channel, ControlFunction, Note, U7};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct MappingConfig {
     toggle_notes: Vec<u8>,
     note_map: Vec<NoteMap>,
     control_map: Vec<ControlMap>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 struct NoteMap {
     note: u8,
     new_note: Vec<u8>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 struct ControlMap {
     note: u8,
     new_note: Vec<u8>,
 }
 
 impl MappingConfig {
-    pub fn new() -> Result<Self> {
-        if let Ok(data) = fs::read_to_string("config.toml") {
-            let config: MappingConfig = toml::from_str(&data)?;
-            //let debug_output = format!("{:#?}", config);
-            //fs::write("debug.txt", debug_output)?;
-
-            Ok(config)
-        } else {
-            Err(anyhow!("config.toml not found!"))
-        }
+    pub fn new(config: MappingConfig) -> Self {
+        config
     }
 
     pub fn is_toggle_note(&self, conn_note: Note) -> bool {

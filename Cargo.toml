@@ -1,7 +1,7 @@
 [package]
 name = "midi-router"
 authors = ["David Frings <dev@davidfrings.dev> (https://DavidFrings.dev)"]
-version = "0.2.5"
+version = "0.2.6"
 description = "MIDI Router for APC40 MK2 to route banks"
 license = "MPL-2.0"
 rust-version = "1.87"
@@ -10,7 +10,6 @@ edition = "2024"
 [dependencies]
 midir = "^0.10"
 wmidi = "^4.0"
-clap = { version = "^4.5", features = ["derive"] }
 anyhow = "^1.0"
 log = "^0.4"
 env_logger = "^0.11"
@@ -19,5 +18,6 @@ serde_json = "^1.0"
 tokio = { version = "^1.47", features = ["rt", "rt-multi-thread", "macros"] }
 ratatui = "^0.29"
 crossterm = "^0.29"
-serde = { version = "1.0.226", features = ["derive"] }
+serde = { version = "^1.0", features = ["derive"] }
 toml = "^0.9"
+actix-web = "^4.11"

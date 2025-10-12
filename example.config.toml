@@ -1,0 +1,35 @@
+[router]
+software_name = "software"
+controller_name = "controller"
+# Loopback MIDI-Ports:
+# 1: to_software
+# 2: from_software
+#
+# Set 1 als input to your software and 2 as output from your software
+
+[api]
+enabled = true
+bind_address = "127.0.0.1"
+port = 8080
+
+
+[maps]
+# All notes that should be toggleable
+# e.g. 0-10
+
+toggle_notes = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+
+# These notes control multiple actions across different MIDI channels.
+# To avoid conflicts, channels sharing the same note will be remapped.
+# (The original note is cleared for safety.)
+[[maps.note_map]]
+note = 1
+new_note = [40, 41, 42, 43, 44, 45, 46, 47]
+
+[[maps.note_map]]
+note = 20
+new_note = [21, 22, 23, 24, 25, 26, 27, 28]
+
+[[maps.control_map]]
+note = 3
+new_note = [4, 5, 6, 7, 8, 9, 10, 11]

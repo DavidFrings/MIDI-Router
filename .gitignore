@@ -1,7 +1,8 @@
 /target
 /.idea
-midi-router-installer.exe
-APC40Mk2_Communications_Protocol_v1.2.pdf
+installer/midi-router-installer.exe
+config.toml
+configs/akai-apc40-mk2/APC40Mk2_Communications_Protocol_v1.2.pdf
 src-1.zip
 src-2.zip
 src-3.zip

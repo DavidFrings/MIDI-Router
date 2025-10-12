@@ -17,9 +17,9 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 DisableProgramGroupPage=yes
 LicenseFile={#ProjectDir}\LICENSE
-InfoAfterFile={#ProjectDir}\install-readme.txt
+InfoAfterFile={#ProjectDir}\installer\install-readme.txt
 PrivilegesRequiredOverridesAllowed=dialog
-OutputDir={#ProjectDir}\
+OutputDir={#ProjectDir}\installer
 OutputBaseFilename=midi-router-installer
 SolidCompression=yes
 WizardStyle=modern
@@ -31,7 +31,8 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Files]
 Source: "{#ProjectDir}\target\release\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#ProjectDir}\target\release\updater.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#ProjectDir}\config.toml"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#ProjectDir}\example.config.toml"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#ProjectDir}\configs\akai-apc40-mk2\akai-apc40-mk2.config.toml"; DestDir: "{app}"; Flags: ignoreversion
 [Icons]
 Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon

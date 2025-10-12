@@ -25,8 +25,10 @@ pub struct App {
     software_name: String,
     exit: Arc<AtomicBool>,
     restart: Arc<AtomicBool>,
-    logs: Vec<String>,
-    log_rx: Receiver<String>,
+    logs_router: Vec<String>,
+    logs_api: Vec<String>,
+    log_rx_router: Receiver<String>,
+    log_rx_api: Receiver<String>,
 }
 
 impl App {
@@ -35,23 +37,33 @@ impl App {
         software_name: String,
         exit: Arc<AtomicBool>,
         restart: Arc<AtomicBool>,
-        log_rx: Receiver<String>,
+        log_rx_router: Receiver<String>,
+        log_rx_api: Receiver<String>,
     ) -> Self {
         Self {
             controller_name,
             software_name,
             exit,
             restart,
-            logs: Vec::new(),
-            log_rx,
+            logs_router: Vec::new(),
+            logs_api: Vec::new(),
+            log_rx_router,
+            log_rx_api,
         }
     }
     pub fn run(&mut self, terminal: &mut DefaultTerminal) -> Result<()> {
         while !self.exit.load(Ordering::SeqCst) {
-            while let Ok(line) = self.log_rx.try_recv() {
-                self.logs.push(line);
-                if self.logs.len() > 1000 {
-                    self.logs.drain(0..200);
+            while let Ok(line) = self.log_rx_router.try_recv() {
+                self.logs_router.push(line);
+                if self.logs_router.len() > 1000 {
+                    self.logs_router.drain(0..200);
+                }
+            }
+
+            while let Ok(line) = self.log_rx_api.try_recv() {
+                self.logs_api.push(line);
+                if self.logs_api.len() > 1000 {
+                    self.logs_api.drain(0..200);
                 }
             }
 
@@ -101,7 +113,7 @@ impl Widget for &App {
             "Quit ".white(),
             "<Q> ".blue().bold(),
             "| ".green().bold(),
-            "Restart router ".white(),
+            "Reload router ".white(),
             "<R>".blue().bold(),
             " ]".bold(),
         ]);
@@ -120,38 +132,39 @@ impl Widget for &App {
             .constraints([Constraint::Percentage(60), Constraint::Percentage(40)].as_ref())
             .split(area);
 
-        let log_area = chunks[0];
-
-        let mut log_lines: Vec<Line> = Vec::with_capacity(self.logs.len());
-        for s in &self.logs {
-            if let Some(rest) = s.strip_prefix("INFO: ") {
-                log_lines.push(Line::from(vec!["INFO:  ".green().bold(), rest.white()]));
-            } else if let Some(rest) = s.strip_prefix("ERROR: ") {
-                log_lines.push(Line::from(vec!["ERROR: ".red().bold(), rest.white()]));
-            } else if let Some(rest) = s.strip_prefix("WARN: ") {
-                log_lines.push(Line::from(vec!["WARN:  ".yellow().bold(), rest.white()]));
-            } else if let Some(rest) = s.strip_prefix("DEBUG: ") {
-                log_lines.push(Line::from(vec!["DEBUG: ".blue(), rest.white()]));
-            } else {
-                log_lines.push(Line::from(s.as_str()));
-            }
-        }
-        let log_text = Text::from(log_lines);
-
-        Clear.render(log_area, buf);
-
-        let inner_h = log_area.height.saturating_sub(2);
-        let total_lines = self.logs.len();
-        let scroll_y = total_lines
-            .saturating_sub(inner_h as usize)
-            .min(u16::MAX as usize) as u16;
-
         let bottom = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Percentage(25), Constraint::Percentage(75)].as_ref())
             .split(chunks[1]);
-        let log_api_text =
-            Text::from(vec![Line::from("Logs from actrix_web... (Coming soon)")]).white();
+
+        let log_router_area = chunks[0];
+        let log_api_area = bottom[1];
+
+        let log_router_lines: Vec<Line> = self
+            .logs_router
+            .iter()
+            .map(|s| format_log_line(s))
+            .collect();
+        let log_api_lines: Vec<Line> = self.logs_api.iter().map(|s| format_log_line(s)).collect();
+
+        let log_router_text = Text::from(log_router_lines);
+        let log_api_text = Text::from(log_api_lines);
+
+        Clear.render(log_router_area, buf);
+        Clear.render(log_api_area, buf);
+
+        let router_inner_h = log_router_area.height.saturating_sub(2);
+        let api_inner_h = log_api_area.height.saturating_sub(2);
+
+        let router_total_lines = self.logs_router.len();
+        let api_total_lines = self.logs_api.len();
+
+        let router_scroll_y = router_total_lines
+            .saturating_sub(router_inner_h as usize)
+            .min(u16::MAX as usize) as u16;
+        let api_scroll_y = api_total_lines
+            .saturating_sub(api_inner_h as usize)
+            .min(u16::MAX as usize) as u16;
 
         let config_text = Text::from(vec![
             Line::from(vec![
@@ -171,7 +184,7 @@ impl Widget for &App {
         ])
         .white();
 
-        Paragraph::new(log_text.on_black())
+        Paragraph::new(log_router_text.on_black())
             .block(
                 Block::bordered()
                     .title("Logs".bold())
@@ -180,9 +193,9 @@ impl Widget for &App {
                     .light_yellow(),
             )
             .wrap(Wrap { trim: true })
-            .scroll((scroll_y, 0))
-            .render(log_area, buf);
-        Paragraph::new(log_api_text)
+            .scroll((router_scroll_y, 0))
+            .render(log_router_area, buf);
+        Paragraph::new(log_api_text.on_black())
             .block(
                 Block::bordered()
                     .title("API Logs".bold())
@@ -190,7 +203,9 @@ impl Widget for &App {
                     .on_black()
                     .light_blue(),
             )
-            .render(bottom[1], buf);
+            .wrap(Wrap { trim: true })
+            .scroll((api_scroll_y, 0))
+            .render(log_api_area, buf);
         Paragraph::new(config_text)
             .block(
                 Block::bordered()
@@ -200,5 +215,19 @@ impl Widget for &App {
                     .dark_gray(),
             )
             .render(bottom[0], buf);
+    }
+}
+
+fn format_log_line(s: &str) -> Line {
+    if let Some(rest) = s.strip_prefix("INFO: ") {
+        Line::from(vec!["INFO:  ".green().bold(), rest.white()])
+    } else if let Some(rest) = s.strip_prefix("ERROR: ") {
+        Line::from(vec!["ERROR: ".red().bold(), rest.white()])
+    } else if let Some(rest) = s.strip_prefix("WARN: ") {
+        Line::from(vec!["WARN:  ".yellow().bold(), rest.white()])
+    } else if let Some(rest) = s.strip_prefix("DEBUG: ") {
+        Line::from(vec!["DEBUG: ".blue(), rest.white()])
+    } else {
+        Line::from(s)
     }
 }

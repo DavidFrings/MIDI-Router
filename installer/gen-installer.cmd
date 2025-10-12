@@ -2,11 +2,17 @@ cargo build --release
 
 @echo off
 setlocal enabledelayedexpansion
+set "SCRIPT_DIR=%~dp0"
+for %%a in ("%SCRIPT_DIR%\..") do set "PROJECT_DIR=%%~fa"
+set "CARGO_TOML=%PROJECT_DIR%\Cargo.toml"
 
-set "PROJECT_DIR=%cd%"
+if not exist "%CARGO_TOML%" (
+    echo Error: Cargo.toml not found at "%CARGO_TOML%"
+    exit /b 1
+)
 
 set "VERSION="
-for /f "tokens=2 delims== " %%A in ('findstr /R "^version *= *" Cargo.toml') do (
+for /f "tokens=2 delims== " %%A in ('findstr /R "^version *= *" "%CARGO_TOML%"') do (
     set "line=%%~A"
     set "line=!line:"=!"
     set "VERSION=!line!"

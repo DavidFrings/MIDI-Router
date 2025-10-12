@@ -21,11 +21,11 @@ impl StateManager {
         }
     }
 
-    pub fn get_states_map(&self) -> &HashMap<u8, Vec<bool>> {
+    pub fn _get_states_map(&self) -> &HashMap<u8, Vec<bool>> {
         &self.states_map
     }
 
-    pub fn get_color_map(&self) -> &HashMap<u8, Vec<u8>> {
+    pub fn _get_color_map(&self) -> &HashMap<u8, Vec<u8>> {
         &self.color_map
     }
 

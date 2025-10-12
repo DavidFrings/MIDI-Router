@@ -1,3 +1,4 @@
+use crate::router::mapping_config::MappingConfig;
 use crate::router::{
     input_connection::{
         InputConnection,
@@ -6,8 +7,8 @@ use crate::router::{
     midi_handler::MidiHandler,
     output_connection::OutputConnection,
 };
-use anyhow::{Context, Result, anyhow, format_err};
-use log::{error, info, warn};
+use anyhow::{Context, Result, anyhow};
+use log::{info, warn};
 use midir::{MidiIO, MidiInput, MidiInputPort, MidiOutput, MidiOutputPort};
 use std::sync::{Arc, Mutex};
 
@@ -37,14 +38,14 @@ struct MidiConnections {
 }
 
 impl MidiRouter {
-    pub fn new() -> Result<Self> {
-        Ok(Self {
+    pub fn new(config: MappingConfig) -> Self {
+        Self {
             from_controller_connection: InputConnection::new(),
             to_controller_connection: Arc::new(Mutex::new(OutputConnection::new())),
             from_software_connection: InputConnection::new(),
             to_software_connection: Arc::new(Mutex::new(OutputConnection::new())),
-            midi_handler: Arc::new(Mutex::new(MidiHandler::new()?)),
-        })
+            midi_handler: Arc::new(Mutex::new(MidiHandler::new(config))),
+        }
     }
 
     pub fn connect(&mut self, controller_name: &str, software_name: &str) -> Result<()> {
