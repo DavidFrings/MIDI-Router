@@ -15,7 +15,7 @@ log = "^0.4"
 env_logger = "^0.11"
 reqwest = { version = "^0.12", features = ["json"] }
 serde_json = "^1.0"
-tokio = { version = "^1.47", features = ["rt", "rt-multi-thread", "macros"] }
+tokio = { version = "^1.48", features = ["rt", "rt-multi-thread", "macros"] }
 ratatui = "^0.29"
 crossterm = "^0.29"
 serde = { version = "^1.0", features = ["derive"] }
