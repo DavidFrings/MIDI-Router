@@ -15,6 +15,7 @@ pub struct MidiHandler {
     mapping_config: MappingConfig,
     led_controller: LedController,
 }
+use log::info;
 
 impl MidiHandler {
     pub fn new(config: MappingConfig) -> Self {
@@ -65,6 +66,7 @@ impl MidiHandler {
                 let current_bank = self.state_manager.get_current_bank();
 
                 if channel != current_bank {
+                    info!("new midi msg {:?}", control);
                     self.state_manager.set_current_bank(*channel);
 
                     self.led_controller.refresh_all_leds(

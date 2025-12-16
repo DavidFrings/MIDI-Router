@@ -101,11 +101,12 @@ pub(crate) fn router_thread(
 ) {
     thread::spawn(move || {
         while should_continue(&exit) {
+            
             router_iteration(&restart, &exit, &config, &controller, &software);
 
             if should_restart(&restart, &exit) {
                 restart.store(false, Ordering::SeqCst);
-                debug!("Router restart requested, reconnecting...");
+                info!("Router restart requested, reconnecting...");
             }
         }
         info!("Router thread exiting");

@@ -2,6 +2,7 @@ use crate::router::{output_connection::OutputConnection, state_manager::StateMan
 use anyhow::Result;
 use std::{thread, time::Duration};
 use wmidi::{Channel, MidiMessage, MidiMessage::NoteOn, Note, Velocity};
+use log::info;
 
 pub struct LedController;
 
@@ -32,6 +33,7 @@ impl LedController {
         bank: &Channel,
         note: Note,
     ) -> Result<()> {
+        info!("single refresh");
         let (state, color) = state_manager.get_note_state_and_color(bank, note)?;
 
         let velocity = Velocity::from_u8_lossy(*color);
@@ -54,6 +56,7 @@ impl LedController {
         output_connection: &mut OutputConnection,
         msg: MidiMessage,
     ) -> Result<()> {
+        info!("send led msg");
         let connection = &mut output_connection.connection;
 
         if let Some(conn) = connection {
