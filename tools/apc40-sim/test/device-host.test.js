@@ -1,0 +1,19 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { Device } from '../src/device.js';
+
+test('rgb primary', () => { const d = new Device(); d.receive([0x90,0x05,45]); assert.deepEqual(d.led('pad-r4c5'), { value:45, secondary:0, anim:'none', period:0, since:0 }); });
+test('rgb blink', () => { const d = new Device(); d.receive([0x90,0x00,5]); d.receive([0x9c,0x00,21], 3); const l = d.led('pad-r4c0'); assert.equal(l.value,5); assert.equal(l.secondary,21); assert.equal(l.anim,'blink'); assert.equal(l.period,0.25); assert.equal(l.since,3); });
+test('rgb channel map', () => { const d = new Device(); d.receive([0x91,0x52,1]); assert.equal(d.led('scene-1').anim,'oneshot'); assert.equal(d.led('scene-1').period,1/6); d.receive([0x9a,0x52,1]); assert.equal(d.led('scene-1').anim,'pulse'); assert.equal(d.led('scene-1').period,2); });
+test('note on vel 0 is off', () => { const d = new Device(); d.receive([0x90,0x5b,1]); d.receive([0x90,0x5b,0]); assert.equal(d.led('play').value,0); d.receive([0x90,0x00,9]); d.receive([0x80,0x00,0]); assert.equal(d.led('pad-r4c0').value,0); });
+test('track leds use channel', () => { const d = new Device(); d.receive([0x93,0x31,1]); assert.equal(d.led('solo-4').value,1); d.receive([0x91,0x42,1]); assert.equal(d.led('xfade-2').value,1); d.receive([0x92,0x34,2]); assert.equal(d.led('clipstop-3').value,2); });
+test('track led on ch 12 warns', () => { const d = new Device(); const r = d.receive([0x9c,0x30,5]); assert.equal(r.warnings.length,1); assert.match(r.warnings[0], /^undefined on hardware: /); });
+test('banked led applies to current bank', () => { const d = new Device(); d.press('select-2'); d.receive([0x90,0x3a,1]); assert.equal(d.led('device-left').value,1); d.press('select-1'); assert.equal(d.led('device-left').value,0); });
+test('host overrides local led', () => { const d = new Device(); d.press('arm-1'); d.receive([0x90,0x30,0]); assert.equal(d.led('arm-1').value,0); });
+test('ring value and type', () => { const d = new Device(); d.receive([0xb0,0x38,3]); d.receive([0xb0,0x30,127]); assert.deepEqual(d.ring('trackknob-1'), {type:3,value:127}); assert.equal(d.value('trackknob-1'),127); d.receive([0xb3,0x10,50]); d.press('select-4'); assert.equal(d.ring('deviceknob-1').value,50); });
+test('device inquiry', () => { const d = new Device(); const { replies } = d.receive([0xf0,0x7e,0x7f,0x06,0x01,0xf7]); assert.equal(replies[0].length,35); assert.deepEqual(replies[0].slice(0,9), [0xf0,0x7e,0x7f,0x06,0x02,0x47,0x29,0x00,0x19]); assert.equal(replies[0].at(-1),0xf7); });
+test('inquiry echoes channel', () => { const d = new Device(); assert.equal(d.receive([0xf0,0x7e,0x05,0x06,0x01,0xf7]).replies[0][2],5); });
+test('introduction sets mode and replies faders', () => { const d = new Device(); d.setValue('fader-1',7); d.setValue('fader-master',9); const { replies } = d.receive([0xf0,0x47,0x7f,0x29,0x60,0x00,0x04,0x41,1,0,0,0xf7]); assert.equal(d.mode,1); assert.deepEqual(replies[0], [0xf0,0x47,0x7f,0x29,0x61,0x00,0x04,7,0,0,0,0,0,0,0,9,0xf7]); });
+test('introduction bad mode warns', () => { const d = new Device(); const r = d.receive([0xf0,0x47,0x7f,0x29,0x60,0x00,0x04,0x43,1,0,0,0xf7]); assert.equal(r.replies.length,0); assert.equal(r.warnings.length,1); assert.equal(d.mode,0); });
+test('garbage input warns', () => { const d = new Device(); for (const m of [[0x90],[0x05,0x10],[0xf0,0x00,0xf7],[0x90,0x5c,1],[0xb0,0x50,1],[],[0xd0,1],[0xe0,1,2],[0xb0,0x07,5]]) { assert.doesNotThrow(() => d.receive(m)); const r = d.receive(m); assert.equal(r.warnings.length,1); assert.match(r.warnings[0], /^undefined on hardware: /); } assert.ok(d.receive([0x90,0x44,1]).warnings.length === 1); });
+test('clock tick is silent', () => { for (const b of [0xf8,0xfa,0xfb,0xfc,0xfe]) assert.deepEqual(new Device().receive([b]), { replies:[], warnings:[] }); });
