@@ -36,13 +36,13 @@ impl LedController {
 
         let velocity = Velocity::from_u8_lossy(*color);
 
-        let message = if *state {
-            NoteOn(Channel::Ch13, note, velocity) // When Note is ON, use Channel 13 for LED ON (Blinking)
+        if *state {
+            // Blink alternates secondary and primary colour: clear primary so the blink is visible.
+            to_controller_connection.send(NoteOn(Channel::Ch1, note, Velocity::MIN))?;
+            to_controller_connection.send(NoteOn(Channel::Ch13, note, velocity))?; // Ch13 = secondary, blinking 1/16
         } else {
-            NoteOn(Channel::Ch1, note, velocity)
-        };
-
-        to_controller_connection.send(message)?;
+            to_controller_connection.send(NoteOn(Channel::Ch1, note, velocity))?;
+        }
 
         thread::sleep(Duration::from_micros(25)); // Small delay to ensure the port is not overwhelmed
 
