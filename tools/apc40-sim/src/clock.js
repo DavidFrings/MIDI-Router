@@ -10,12 +10,14 @@ export class Clock {
     this.#anchorBeats = this.#internal(this.#seen); this.#anchorMs = this.#seen; this.#bpm = v;
   }
 
+  setBpm(v, now) { this.beats(now); this.bpm = v; }
+
   #internal(now) { return this.#anchorBeats + ((now - this.#anchorMs) * this.#bpm) / 60000; }
   #sync(now) {
     this.#seen = Math.max(this.#seen, now);
     if (this.#mode === 'midi' && now - this.#lastTick >= TIMEOUT) {
-      // continue from the last MIDI beat value, never backwards
-      this.#mode = 'internal'; this.#anchorBeats = this.#midiBeats; this.#anchorMs = this.#lastTick;
+      // continue from the MIDI beat value at the timeout instant
+      this.#mode = 'internal'; this.#anchorBeats = this.#midiBeats; this.#anchorMs = this.#lastTick + TIMEOUT; // timeout instant: no jump
     }
   }
   tick(now) {

@@ -17,3 +17,14 @@ test('midi -> internal never backwards', () => {
   const c = new Clock(120); for (let i = 0; i < 24; i++) c.tick(1000 + i);
   const m = c.beats(1023); assert.ok(c.beats(1700) >= m); assert.ok(c.beats(1800) > c.beats(1700));
 });
+test('midi -> internal no jump', () => {
+  const c = new Clock(120); for (let i = 0; i < 24; i++) c.tick(1000 + 20 * i);
+  const t = 1000 + 20 * 23, m = c.beats(t);
+  assert.ok(Math.abs(c.beats(t + 500) - m) < 0.01);
+  assert.ok(Math.abs(c.beats(t + 1000) - c.beats(t + 500) - 1) < 0.01);
+  assert.ok(Math.abs(c.beats(t + 1500) - c.beats(t + 500) - 2) < 0.01); // query order independent
+});
+test('setBpm continuity', () => {
+  const c = new Clock(120); c.beats(0); c.setBpm(60, 1000);
+  assert.equal(c.beats(1000), 2); assert.equal(c.beats(2000), 3);
+});
