@@ -4,11 +4,18 @@ use wmidi::MidiMessage;
 
 pub struct OutputConnection {
     pub connection: Option<MidiOutputConnection>,
+    /// Test-only record of every message passed to `send`.
+    #[cfg(test)]
+    pub sent: Vec<Vec<u8>>,
 }
 
 impl OutputConnection {
     pub fn new() -> Self {
-        Self { connection: None }
+        Self {
+            connection: None,
+            #[cfg(test)]
+            sent: Vec::new(),
+        }
     }
 
     pub fn connect(&mut self, name: &str, midi: MidiOutput, port: &MidiOutputPort) -> Result<()> {
@@ -24,9 +31,13 @@ impl OutputConnection {
 
     /// Sends `msg` if connected; no-op otherwise.
     pub fn send(&mut self, msg: MidiMessage) -> Result<()> {
+        let mut buffer = [0_u8; 3];
+        let length = msg.copy_to_slice(&mut buffer)?;
+
+        #[cfg(test)]
+        self.sent.push(buffer[..length].to_vec());
+
         if let Some(connection) = &mut self.connection {
-            let mut buffer = [0_u8; 3];
-            let length = msg.copy_to_slice(&mut buffer)?;
             connection.send(&buffer[..length])?;
         }
 
