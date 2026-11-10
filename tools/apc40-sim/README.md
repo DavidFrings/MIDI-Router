@@ -13,7 +13,7 @@ Plain ES modules, no build, no dependencies.
 4. Start the router.
 5. In `tools/apc40-sim` run `python -m http.server 8000`.
 6. Open `http://localhost:8000` in Chrome or Edge and allow MIDI and SysEx access.
-7. Select port `APC40 mkII Sim (B)` as both input and output.
+7. Select port `APC40 mkII Sim (B)` as both input and output. The simulator preselects (B) when present; Check that it is selected for both, because (A) is the router's endpoint.
 
 If Web MIDI is unavailable or denied, a red banner shows the error. The panel and monitor still
 work; outgoing messages are logged with `(not sent)`.

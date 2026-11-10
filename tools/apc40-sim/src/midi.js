@@ -18,6 +18,6 @@ export async function openMidi(onMessage) {
     output = access.outputs.get(outputId) ?? null;
     if (input) input.onmidimessage = (e) => onMessage([...e.data]);
   }
-  function send(bytes) { output?.send(bytes); }
+  function send(bytes) { if (!output) return false; output.send(bytes); return true; }
   return api;
 }

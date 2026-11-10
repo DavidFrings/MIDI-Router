@@ -12,7 +12,7 @@ Controller notes are hex in the APC40 mkII protocol (e.g. Arm = 0x30 = 48).
   unchanged. Remap table: `configs/akai-apc40-mk2/akai-apc40-mk2.config.toml:16-34`.
 - Impact: Arm track 1 (note 0x30 = 48, ch 1) is remapped to 40 (`config.toml:17-18`), so its LED
   command goes to note 40, not 48. The Arm LED never lights; note 40 is not an Arm LED (per the
-  spec, pads are 0x00-0x27).
+  APC40 mkII protocol PDF p.13, pads are 0x00-0x27; 40 = 0x28 is neither a pad nor Arm).
 
 ## 2. `refresh_all_leds` sends notes 0-63 on channel 1 / 13
 
@@ -27,7 +27,7 @@ Controller notes are hex in the APC40 mkII protocol (e.g. Arm = 0x30 = 48).
 - Evidence: `config.toml:20-34` remaps notes 49 (Solo), 50 (Activator), 52 (Clip Stop), 66 (Crossfade A/B)
   to 68-79 and 105-120 for some banks. `toggle_notes` contains only 0-63 (`config.toml:12-14`), so
   `is_toggle_note` fails and the message is only logged as a warning: `midi_handler.rs:104-109`
-  (controller NoteOn), `:122-127` (NoteOff), `:162-167` and `:180-185` (software side).
+  (controller NoteOn), `:122-127` (NoteOff), `:163-167` and `:181-185` (software side).
 - Impact: those buttons never reach the software and get no LED feedback. This differs from the
   assumption that the router sends these notes to the device (it discards them). Whether that is
   intended is unclear; check against the Daslight mapping before changing it.
