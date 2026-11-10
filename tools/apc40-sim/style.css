@@ -1,0 +1,13 @@
+html, body { margin: 0; background: #111; color: #ddd; font-family: system-ui, sans-serif; }
+body { overflow-x: hidden; }
+#panel {
+  display: block; width: 100%; height: auto; max-height: 100vh;
+  user-select: none; -webkit-user-select: none; touch-action: none;
+}
+#panel .ctl { cursor: pointer; }
+#panel .knob, #panel .vfader { cursor: ns-resize; }
+#panel .hfader { cursor: ew-resize; }
+#panel .lbl {
+  font-size: 7px; letter-spacing: 0.04em; text-transform: uppercase; fill: #c8c8c8; pointer-events: none;
+}
+#panel .held .body { stroke: #fff; stroke-width: 2; }
