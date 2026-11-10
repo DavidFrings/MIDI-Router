@@ -1,0 +1,62 @@
+name: Release
+
+# Creates a GitHub release with the Windows installer whenever main carries
+# a Cargo.toml version that has no v<version> release yet.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check version
+        id: version
+        shell: bash
+        run: |
+          version=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if gh release view "v$version" > /dev/null 2>&1; then
+            echo "Release v$version already exists, nothing to do."
+            echo "new=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "new=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build
+        if: steps.version.outputs.new == 'true'
+        run: cargo build --release --locked
+
+      - name: Build installer
+        if: steps.version.outputs.new == 'true'
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup --no-progress -y }
+          & $iscc "/DMyAppVersion=${{ steps.version.outputs.version }}" "/DProjectDir=$env:GITHUB_WORKSPACE" installer\installer.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Create release
+        if: steps.version.outputs.new == 'true'
+        shell: bash
+        run: |
+          v="${{ steps.version.outputs.version }}"
+          gh release create "v$v" \
+            installer/midi-router-installer.exe \
+            target/release/midi-router.exe \
+            example.config.toml \
+            --title "MIDI Router - $v" \
+            --target "$GITHUB_SHA" \
+            --generate-notes
