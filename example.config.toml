@@ -1,11 +1,14 @@
+# Optional: skip the update check at startup (for development).
+# dev = true
+
 [router]
+# The router talks to the software through two loopMIDI ports:
+#   to_<software_name>    use it as the input in your software
+#   from_<software_name>  use it as the output (feedback) in your software
 software_name = "software"
+# The first MIDI port whose name contains this text (case-insensitive) is used
+# as controller input and output.
 controller_name = "controller"
-# Loopback MIDI-Ports:
-# 1: to_software
-# 2: from_software
-#
-# Set 1 als input to your software and 2 as output from your software
 
 [api]
 enabled = true
@@ -14,18 +17,16 @@ port = 8080
 
 
 [maps]
-# All notes that should be toggleable
-# e.g. 0-10
-
+# Notes that toggle on/off with each press, e.g. 0-10.
 toggle_notes = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
 # Optional: notes sent only while held (NoteOn on press, NoteOff on release)
 # instead of toggling. Takes priority over toggle_notes.
 momentary_notes = [82, 83, 84, 85, 86]
 
-# These notes control multiple actions across different MIDI channels.
-# To avoid conflicts, channels sharing the same note will be remapped.
-# (The original note is cleared for safety.)
+# Buttons whose note is the same on every track (the track is in the MIDI channel)
+# get a separate note per track: new_note[i] is sent for channel i+1. Channels
+# beyond the list keep the original note.
 [[maps.note_map]]
 note = 1
 new_note = [40, 41, 42, 43, 44, 45, 46, 47]
@@ -34,6 +35,7 @@ new_note = [40, 41, 42, 43, 44, 45, 46, 47]
 note = 20
 new_note = [21, 22, 23, 24, 25, 26, 27, 28]
 
+# Same for control changes, e.g. the track faders (CC 7 on channels 1-8).
 [[maps.control_map]]
 note = 3
 new_note = [4, 5, 6, 7, 8, 9, 10, 11]
