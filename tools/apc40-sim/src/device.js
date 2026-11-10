@@ -17,6 +17,7 @@ export class Device {
     this._leds = new Map();
     this._vals = new Map();
     this._rings = new Map();
+    this._pressed = new Map(); // id -> { key, ch } at press time, so release hits the same LED and channel
     this._led(byId('select-1')).value = 1;
   }
 
@@ -24,20 +25,21 @@ export class Device {
   // Banked controls keep separate state per bank (9 banks).
   // Mode 1/2 have no banking: banked controls use the bank-0 slot.
   _key(c) { return c.banked ? `${c.id}@${this.mode === 0 ? this.bank : 0}` : c.id; }
-  _led(c) { const k = this._key(c); if (!this._leds.has(k)) this._leds.set(k, newLed()); return this._leds.get(k); }
+  _led(c, k = this._key(c)) { if (!this._leds.has(k)) this._leds.set(k, newLed()); return this._leds.get(k); }
   _ring(c) { const k = this._key(c); if (!this._rings.has(k)) this._rings.set(k, { type: 1, value: 0 }); return this._rings.get(k); }
 
   led(id) { return this._led(this._get(id)); }
   value(id) { return this._vals.get(this._key(this._get(id))) ?? 0; }
   ring(id) { return this._ring(this._get(id)); }
 
-  _setLed(c, v) { Object.assign(this._led(c), newLed(), { value: v }); }
+  _setLed(c, v, k) { Object.assign(this._led(c, k), newLed(), { value: v }); }
   _channel(c) { return c.track ?? (c.banked && this.mode === 0 ? this.bank : 0); }
 
   press(id) {
     const c = this._get(id);
     if (c.type === 'pedal') return [[0xb0, c.cc, 0x7f]];
     if (c.type !== 'button') return [];
+    this._pressed.set(id, { key: this._key(c), ch: this._channel(c) });
     if (this.mode !== 0) return [[0x90 | this._channel(c), c.note, 0x7f]];
     switch (c.local) {
       case 'momentary': this._setLed(c, c.led === 'rgb' ? 21 : 1); break; // 21 = green, unverified
@@ -55,11 +57,13 @@ export class Device {
     const c = this._get(id);
     if (c.type === 'pedal') return [[0xb0, c.cc, 0x00]];
     if (c.type !== 'button') return [];
+    const p = this._pressed.get(id) ?? { key: this._key(c), ch: this._channel(c) };
+    this._pressed.delete(id);
     if (this.mode === 0) {
       if (c.local === 'radio') return [];
-      if (c.local === 'momentary') this._setLed(c, 0);
+      if (c.local === 'momentary') this._setLed(c, 0, p.key);
     }
-    return [[0x80 | this._channel(c), c.note, 0x7f]];
+    return [[0x80 | p.ch, c.note, 0x7f]];
   }
 
   setValue(id, v) {

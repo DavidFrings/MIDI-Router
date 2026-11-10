@@ -2,7 +2,7 @@
 import { Device } from './device.js';
 import { Clock } from './clock.js';
 import { describe } from './describe.js';
-import { buildPanel, paint } from './panel.js';
+import { buildPanel, paint, unlatch } from './panel.js';
 import { openMidi } from './midi.js';
 
 const $ = (id) => document.getElementById(id);
@@ -69,14 +69,14 @@ function fill(select, ports, keep) {
 function apply() { midi?.use(sel.in.value, sel.out.value); }
 function syncPorts(initial) {
   for (const [k, ports, label] of [['in', midi.inputs, 'input'], ['out', midi.outputs, 'output']]) {
-    const prev = initial ? undefined : sel[k].value;
+    const prev = initial ? undefined : sel[k].value || undefined; // nothing selected: let defaultPort pick a new (B)
     fill(sel[k], ports, prev);
     if (prev && !sel[k].value) line(`MIDI ${label} port disappeared, selection reset to none`, 'warn');
   }
   apply();
 }
 sel.in.onchange = sel.out.onchange = apply;
-$('power').onclick = () => { device.reset(); ticks = 0; line('Power cycle: device state reset'); };
+$('power').onclick = () => { unlatch(svg); device.reset(); ticks = 0; line('Power cycle: device state reset'); };
 $('bpm').onchange = (e) => {
   const v = Math.min(300, Math.max(20, Number(e.target.value) || 120));
   e.target.value = v;
@@ -84,7 +84,9 @@ $('bpm').onchange = (e) => {
 };
 
 openMidi(incoming).then((m) => {
-  midi = m; m.onChange = () => syncPorts(false); syncPorts(true);
+  midi = m;
+  if (!m.sysexOk) { const b = $('banner'); b.textContent = 'SysEx disabled — device inquiry/introduction replies not possible'; b.hidden = false; }
+  m.onChange = () => syncPorts(false); syncPorts(true);
 }).catch((e) => {
   const b = $('banner'); b.textContent = e.message; b.hidden = false;
   fill(sel.in, [], null); fill(sel.out, [], null);

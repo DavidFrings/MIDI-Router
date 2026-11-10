@@ -1,5 +1,7 @@
 # MIDI-Router known issues (found during APC40 simulator work)
 
+Checked against main @ efa3c68
+
 For future agents. All issues below are open. Status of each: not fixed, out of scope of the
 APC40 simulator work. Line numbers refer to the source at the time of writing (branch `feat/apc40-sim`).
 Controller notes are hex in the APC40 mkII protocol (e.g. Arm = 0x30 = 48).
@@ -18,14 +20,14 @@ Controller notes are hex in the APC40 mkII protocol (e.g. Arm = 0x30 = 48).
 
 - Evidence: `src/router/led_controller.rs:13-26` loops over all `toggle_notes`
   (`config.toml:12-14`: 0-63); `led_controller.rs:39-43` uses `Channel::Ch13` for ON and `Channel::Ch1` for OFF.
-- Impact: for notes 0x30-0x39 the channel selects the track, so every refresh writes track 1 only.
+- Impact: notes 0x30-0x34 use the channel as track, so every refresh writes track 1 only; 0x35-0x39 have no LED.
   Channel 13 (index 12) is undefined on hardware for those notes. Bank switches
   (`midi_handler.rs:58-80`) trigger this refresh.
 
 ## 3. Remapped notes 68-79 and 105-120 are dropped (not in toggle_notes)
 
 - Evidence: `config.toml:20-34` remaps notes 49 (Solo), 50 (Activator), 52 (Clip Stop), 66 (Crossfade A/B)
-  to 68-79 and 105-120 for some banks. `toggle_notes` contains only 0-63 (`config.toml:12-14`), so
+  to 68-79 and 105-120 for some tracks. `toggle_notes` contains only 0-63 (`config.toml:12-14`), so
   `is_toggle_note` fails and the message is only logged as a warning: `midi_handler.rs:104-109`
   (controller NoteOn), `:122-127` (NoteOff), `:163-167` and `:181-185` (software side).
 - Impact: those buttons never reach the software and get no LED feedback. This differs from the
@@ -47,3 +49,17 @@ Controller notes are hex in the APC40 mkII protocol (e.g. Arm = 0x30 = 48).
   SysEx is ignored (`midi_handler.rs:189`). `src/router/output_connection.rs` only holds the connection.
 - Impact: device SysEx replies are forwarded to the software and fail with an error; mode
   introduction SysEx from the software never reaches the controller.
+
+## 6. `control_map` is never applied; CCs are renamed via `note_map`
+
+- Evidence: `MappingConfig::remap_control` (`src/router/mapping_config.rs:51-67`) iterates `self.note_map`
+  instead of `control_map`. `src/router/midi_handler.rs:130-134` sends every CC on `current_bank`.
+- Impact: all 8 track faders arrive as CC 7 on the bank channel; track knobs CC 0x30/0x31/0x32/0x34 get
+  renamed via `note_map`.
+- Fixed on the unmerged branch `fix/control-map-momentary` (commit dcfed9f); verify after that merge.
+
+## Note: on/off can look identical in the simulator
+
+Router "on" uses channel 13 (blink secondary) with the stored colour (`src/router/led_controller.rs:39-43`).
+When primary == secondary the LED looks solid, so on/off can look the same in the simulator. This is router
+behaviour, not a simulator bug.

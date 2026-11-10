@@ -148,10 +148,18 @@ function bindDrag(g, onDown, onMove) {
   });
 }
 
+const latchedBySvg = new WeakMap();
+/** Release all latched buttons visually, without sending messages (power cycle). */
+export function unlatch(svg) {
+  latchedBySvg.get(svg)?.clear();
+  svg.querySelectorAll('.held').forEach((g) => g.classList.remove('held'));
+}
+
 export function buildPanel(svg, h) {
   const spins = new Map(); // endless encoders: running step count for the pointer angle
   const turn = (id, d) => { if (byId(id).type === 'encoder') spins.set(id, (spins.get(id) ?? 0) + d); h.turn(id, d); };
   const latched = new Set();
+  latchedBySvg.set(svg, latched);
   const toSvg = (e) => new DOMPoint(e.clientX, e.clientY).matrixTransform(svg.getScreenCTM().inverse());
 
   svg.addEventListener('contextmenu', (e) => e.preventDefault());

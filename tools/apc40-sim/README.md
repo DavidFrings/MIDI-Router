@@ -10,10 +10,20 @@ Plain ES modules, no build, no dependencies.
    Plain loopMIDI does not work for the controller port: the router opens one name for both input
    and output, so it would read back its own LED messages (feedback loop; loopMIDI mutes the port).
 3. Create the loopMIDI ports `to_Daslight` and `from_Daslight` (software side).
-4. Start the router.
-5. In `tools/apc40-sim` run `python -m http.server 8000`.
+4. Start the router and check its log: `Using Controller input: …` and `Using Controller feedback output: …`
+   must name `APC40 mkII Sim (A)`. The router takes the first port whose name contains `apc40 mkii`, so it may pick (B)
+   instead. If the log shows (B), select (A) in the simulator (both input and output). A real APC40 plugged in at
+   the same time also matches that name.
+5. In `tools/apc40-sim` run `python -m http.server 8000` (if `python` opens the Microsoft Store, use `py -m http.server 8000`).
 6. Open `http://localhost:8000` in Chrome or Edge and allow MIDI and SysEx access.
-7. Select port `APC40 mkII Sim (B)` as both input and output. The simulator preselects (B) when present; Check that it is selected for both, because (A) is the router's endpoint.
+7. Select port `APC40 mkII Sim (B)` as both input and output. The simulator preselects (B) when present; check that it is selected for both, because (A) is the router's endpoint.
+
+If SysEx is refused, the simulator retries without it and shows a banner (device inquiry and mode
+introduction replies are then impossible). To reset the permission: lock icon in the address bar, Site settings,
+MIDI devices.
+
+If the page stays blank and the console says a module was refused due to MIME type `text/plain`, fix the Windows
+registry value `HKEY_CLASSES_ROOT\.js` "Content Type" = `text/javascript`, or use another static server.
 
 If Web MIDI is unavailable or denied, a red banner shows the error. The panel and monitor still
 work; outgoing messages are logged with `(not sent)`.
