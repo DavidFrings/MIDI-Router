@@ -1,69 +1,63 @@
-# MIDI-Router known issues (found during APC40 simulator work)
+# MIDI-Router known issues
 
-Checked against main @ efa3c68
+Found while building the APC40 mkII simulator (`tools/apc40-sim/`), re-checked against `main` after
+PR #8 and #9. Code references name functions rather than line numbers, so they survive edits.
+Controller notes are given in hex as in the APC40 mkII protocol (e.g. Arm = 0x30 = 48).
 
-For future agents. All issues below are open. Status of each: not fixed, out of scope of the
-APC40 simulator work. Line numbers refer to the source at the time of writing (branch `feat/apc40-sim`).
-Controller notes are hex in the APC40 mkII protocol (e.g. Arm = 0x30 = 48).
+Use the simulator to reproduce: its monitor flags every message the hardware does not define as
+`undefined on hardware`.
 
-## 1. LED feedback uses the remapped software note, not the controller note
+## Open
 
-- Evidence: `src/router/midi_handler.rs:94` and `:113` remap the controller note with `remap_note`;
-  `:116-121` (NoteOff) and `:207-212` (`toggle_note_handler`, called at `:97-103`) pass the remapped
-  note to `refresh_single_led`. `src/router/led_controller.rs:40-42` sends it to the controller
-  unchanged. Remap table: `configs/akai-apc40-mk2/akai-apc40-mk2.config.toml:16-34`.
-- Impact: Arm track 1 (note 0x30 = 48, ch 1) is remapped to 40 (`config.toml:17-18`), so its LED
-  command goes to note 40, not 48. The Arm LED never lights; note 40 is not an Arm LED (per the
-  APC40 mkII protocol PDF p.13, pads are 0x00-0x27; 40 = 0x28 is neither a pad nor Arm).
+### 1. LED feedback uses the remapped software note, not the controller note
 
-## 2. `refresh_all_leds` sends notes 0-63 on channel 1 / 13
+- **Where:** `MidiHandler::process_controller_message` remaps the controller note with
+  `MappingConfig::remap_note`, then passes the remapped note to `LedController::refresh_single_led`
+  (directly on NoteOff, via `toggle_note_handler` on NoteOn). `refresh_single_led` sends it to the
+  controller unchanged.
+- **Impact:** Arm track 1 (0x30, ch 1) is remapped to 40 in
+  `configs/akai-apc40-mk2/akai-apc40-mk2.config.toml`, so its LED command goes to note 40 (0x28). That
+  is neither a pad (pads are 0x00-0x27, protocol PDF p.13) nor Arm, so the Arm LED never lights.
 
-- Evidence: `src/router/led_controller.rs:13-26` loops over all `toggle_notes`
-  (`config.toml:12-14`: 0-63); `led_controller.rs:39-43` uses `Channel::Ch13` for ON and `Channel::Ch1` for OFF.
-- Impact: notes 0x30-0x34 use the channel as track, so every refresh writes track 1 only; 0x35-0x39 have no LED.
-  Channel 13 (index 12) is undefined on hardware for those notes. Bank switches
-  (`midi_handler.rs:58-80`) trigger this refresh.
+### 2. `refresh_all_leds` writes every toggle note on channel 1 / 15
 
-## 3. Remapped notes 68-79 and 105-120 are dropped (not in toggle_notes)
+- **Where:** `LedController::refresh_all_leds` loops over all `toggle_notes` (0-63 in the APC40 config).
+  `refresh_single_led` sends ch 1 for off and ch 1 + ch 15 for on.
+- **Impact:** for 0x30-0x34 the channel selects the track, so every refresh writes track 1 only
+  (ch 15 is undefined there). 0x35-0x39 have no LED. Runs on every bank switch (`handle_site_change`).
 
-- Evidence: `config.toml:20-34` remaps notes 49 (Solo), 50 (Activator), 52 (Clip Stop), 66 (Crossfade A/B)
-  to 68-79 and 105-120 for some tracks. `toggle_notes` contains only 0-63 (`config.toml:12-14`), so
-  `is_toggle_note` fails and the message is only logged as a warning: `midi_handler.rs:104-109`
-  (controller NoteOn), `:122-127` (NoteOff), `:163-167` and `:181-185` (software side).
-- Impact: those buttons never reach the software and get no LED feedback. This differs from the
-  assumption that the router sends these notes to the device (it discards them). Whether that is
-  intended is unclear; check against the Daslight mapping before changing it.
+### 3. Remapped notes outside `toggle_notes` are dropped
 
-## 4. Initial bank hardcoded
+- **Where:** the APC40 config remaps Solo (0x31), Activator (0x32), Clip Stop (0x34) and Crossfade A/B (0x42)
+  to 68-79 and 105-120 for some tracks. `toggle_notes` only holds 0-63, so `is_toggle_note` fails and
+  `process_controller_message` / `process_software_message` only log a warning.
+- **Impact:** those buttons never reach the software and get no LED feedback. Check the Daslight mapping
+  before changing it; the drop may or may not be intended.
 
-- Evidence: `src/router/state_manager.rs:20`: `current_bank: Channel::Ch1, // ToDo: get from controller`.
-- Impact: if the controller starts on another bank, the router's bank is wrong until the first
-  CC 16 (`midi_handler.rs:63-79`) arrives.
+### 4. Initial bank is hardcoded
 
-## 5. Router cannot send SysEx
+- **Where:** `StateManager::new`: `current_bank: Channel::Ch1, // ToDo: get from controller`.
+- **Impact:** if the controller starts on another bank, the router's bank is wrong until the first
+  CC 16 arrives (any Track Select press or device knob 1).
 
-- Evidence: 3-byte buffers with `copy_to_slice` in `src/router/midi_handler.rs:233-235`
-  (`send_midi_message`) and `src/router/led_controller.rs:60-62` (also dead code at
-  `midi_connection.rs:447`). A SysEx message does not fit, so `copy_to_slice` returns an error.
-  Controller SysEx reaches `forward_raw_message` via `midi_handler.rs:136-138` and fails; software
-  SysEx is ignored (`midi_handler.rs:189`). `src/router/output_connection.rs` only holds the connection.
-- Impact: device SysEx replies are forwarded to the software and fail with an error; mode
-  introduction SysEx from the software never reaches the controller.
+### 5. Router cannot send SysEx
 
-## 6. `control_map` is never applied; CCs are renamed via `note_map`
+- **Where:** `OutputConnection::send` copies every message into a 3-byte buffer (`copy_to_slice`).
+- **Impact:** SysEx does not fit and returns an error. Device SysEx replies forwarded to the software
+  (the `_` arm of `process_controller_message`) fail, and the router can never send a mode
+  introduction to the controller.
 
-- Evidence: `MappingConfig::remap_control` (`src/router/mapping_config.rs:51-67`) iterates `self.note_map`
-  instead of `control_map`. `src/router/midi_handler.rs:130-134` sends every CC on `current_bank`.
-- Impact: all 8 track faders arrive as CC 7 on the bank channel; track knobs CC 0x30/0x31/0x32/0x34 get
-  renamed via `note_map`.
-- Fixed on the unmerged branch `fix/control-map-momentary` (commit dcfed9f); verify after that merge.
+### 6. LED colour unknown until Daslight reports "off" once
 
-## Note: on/off can look identical in the simulator
+- **Where:** `process_software_message` takes Daslight's NoteOn vel 1 as "on" and keeps the stored
+  colour. The colour only arrives with the "off" message (vel = colour).
+- **Impact:** a scene that is already on when the router starts blinks with colour 0 (invisible) until
+  it is switched off once.
 
-Router "on" uses channel 13 (blink secondary) with the stored colour (`src/router/led_controller.rs:39-43`).
-When primary == secondary the LED looks solid, so on/off can look the same in the simulator. This is router
-behaviour, not a simulator bug.
+## Fixed
 
-**Fixed on `fix/control-map-momentary`:** "on" now clears the primary colour (ch 1 vel 0) before the blink
-(ch 15 = blink 1/4), so the LED blinks colour/off. Daslight sends no NoteOff: NoteOn vel 1 means "on" (keep the
-stored colour, blink), any other velocity means "off" with that colour (solid).
+- **`control_map` was never applied** (faders all arrived as CC 7): `remap_control` read `note_map`.
+  Fixed in PR #8.
+- **On/off LEDs could look identical:** "on" sent only the blinking secondary colour, so with
+  primary == secondary the blink was invisible, and every Daslight NoteOn counted as "on". Fixed in PR #8:
+  vel 1 = on (blink 1/4 on ch 15, primary cleared first), any other velocity = off with that colour (solid).
