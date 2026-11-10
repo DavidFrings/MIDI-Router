@@ -19,6 +19,10 @@ port = 8080
 
 toggle_notes = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
+# Optional: notes sent only while held (NoteOn on press, NoteOff on release)
+# instead of toggling. Takes priority over toggle_notes.
+momentary_notes = [82, 83, 84, 85, 86]
+
 # These notes control multiple actions across different MIDI channels.
 # To avoid conflicts, channels sharing the same note will be remapped.
 # (The original note is cleared for safety.)

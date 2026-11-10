@@ -93,7 +93,14 @@ impl MidiHandler {
             NoteOn(channel, note, velocity) => {
                 let remapped_note = self.mapping_config.remap_note(&channel, note)?;
 
-                if self.mapping_config.is_toggle_note(remapped_note) {
+                if self.mapping_config.is_momentary_note(remapped_note) {
+                    self.momentary_note_handler(
+                        to_controller_connection,
+                        to_software_connection,
+                        current_bank,
+                        NoteOn(*current_bank, remapped_note, velocity),
+                    )?;
+                } else if self.mapping_config.is_toggle_note(remapped_note) {
                     self.toggle_note_handler(
                         to_controller_connection,
                         to_software_connection,
@@ -109,10 +116,17 @@ impl MidiHandler {
                 }
             }
 
-            NoteOff(channel, note, _velocity) => {
+            NoteOff(channel, note, velocity) => {
                 let remapped_note = self.mapping_config.remap_note(&channel, note)?;
 
-                if self.mapping_config.is_toggle_note(remapped_note) {
+                if self.mapping_config.is_momentary_note(remapped_note) {
+                    self.momentary_note_handler(
+                        to_controller_connection,
+                        to_software_connection,
+                        current_bank,
+                        NoteOff(*current_bank, remapped_note, velocity),
+                    )?;
+                } else if self.mapping_config.is_toggle_note(remapped_note) {
                     self.led_controller.refresh_single_led(
                         to_controller_connection,
                         &mut self.state_manager,
@@ -214,6 +228,33 @@ impl MidiHandler {
         Ok(())
     }
 
+    /// Forwards press/release as-is; LED is on only while held.
+    fn momentary_note_handler(
+        &mut self,
+        to_controller_connection: &mut OutputConnection,
+        to_software_connection: &mut OutputConnection,
+        bank: &Channel,
+        message: MidiMessage<'static>,
+    ) -> Result<()> {
+        let (note, pressed) = match message {
+            NoteOn(_, note, _) => (note, true),
+            NoteOff(_, note, _) => (note, false),
+            _ => return Ok(()),
+        };
+
+        self.state_manager.set_note_state(bank, note, pressed)?;
+        self.send_midi_message(to_software_connection, message)?;
+
+        self.led_controller.refresh_single_led(
+            to_controller_connection,
+            &mut self.state_manager,
+            bank,
+            note,
+        )?;
+
+        Ok(())
+    }
+
     fn forward_raw_message(
         &self,
         output_connection: &mut OutputConnection,
@@ -236,5 +277,54 @@ impl MidiHandler {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn handler() -> MidiHandler {
+        let config: MappingConfig = toml::from_str(
+            "toggle_notes = [0]\nmomentary_notes = [82]\nnote_map = []\ncontrol_map = []",
+        )
+        .unwrap();
+        MidiHandler::new(config)
+    }
+
+    fn is_on(handler: &mut MidiHandler, note: u8) -> bool {
+        *handler
+            .state_manager
+            .get_note_state_and_color(&Channel::Ch1, Note::from_u8_lossy(note))
+            .unwrap()
+            .0
+    }
+
+    fn press(handler: &mut MidiHandler, msg: MidiMessage<'static>) {
+        // Unconnected outputs: sends are no-ops, state still updates.
+        let (mut to_ctrl, mut to_sw) = (OutputConnection::new(), OutputConnection::new());
+        handler.handle_controller_msg(msg, &mut to_ctrl, &mut to_sw).unwrap();
+    }
+
+    #[test]
+    fn momentary_note_is_on_while_held_and_off_after_release() {
+        let mut h = handler();
+        let note = Note::from_u8_lossy(82);
+
+        press(&mut h, NoteOn(Channel::Ch1, note, Velocity::MAX));
+        assert!(is_on(&mut h, 82));
+
+        press(&mut h, NoteOff(Channel::Ch1, note, Velocity::MAX));
+        assert!(!is_on(&mut h, 82));
+    }
+
+    #[test]
+    fn toggle_note_stays_on_after_release() {
+        let mut h = handler();
+        let note = Note::from_u8_lossy(0);
+
+        press(&mut h, NoteOn(Channel::Ch1, note, Velocity::MAX));
+        press(&mut h, NoteOff(Channel::Ch1, note, Velocity::MAX));
+        assert!(is_on(&mut h, 0));
     }
 }

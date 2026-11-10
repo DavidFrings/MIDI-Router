@@ -8,7 +8,7 @@ use crate::router::{
     output_connection::OutputConnection,
 };
 use anyhow::{Context, Result, anyhow};
-use log::{info, warn};
+use log::info;
 use midir::{MidiIO, MidiInput, MidiInputPort, MidiOutput, MidiOutputPort};
 use std::sync::{Arc, Mutex};
 
@@ -103,23 +103,18 @@ impl MidiRouter {
             &to_software_midi_name,
         )?;
 
-        /// Helper to safely find a port (with fallback + warning)
+        /// Find the port whose name contains `name`; never fall back to another device.
         fn find_port<P: MidiIO>(midi_io: &P, ports: &[P::Port], name: &str) -> Result<P::Port> {
-            if ports.is_empty() {
-                return Err(anyhow!("No MIDI ports available for '{}'", name));
-            }
-
-            if let Some(port) = ports.iter().find(|port| {
-                midi_io
-                    .port_name(port)
-                    .map(|n| n.to_lowercase().contains(&name.to_lowercase()))
-                    .unwrap_or(false)
-            }) {
-                Ok(port.clone())
-            } else {
-                warn!("No matching port for '{}', using first available.", name);
-                Ok(ports[0].clone())
-            }
+            ports
+                .iter()
+                .find(|port| {
+                    midi_io
+                        .port_name(port)
+                        .map(|n| n.to_lowercase().contains(&name.to_lowercase()))
+                        .unwrap_or(false)
+                })
+                .cloned()
+                .ok_or_else(|| anyhow!("Could not find a MIDI device containing '{}'", name))
         }
 
         info!(
