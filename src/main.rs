@@ -8,7 +8,7 @@ use crate::utils::{
     threads::{api_thread, router_thread, tui_thread},
 };
 use anyhow::Result;
-use log::{LevelFilter, info};
+use log::{LevelFilter, info, warn};
 use std::sync::{
     Arc, Mutex,
     atomic::AtomicBool,
@@ -38,7 +38,10 @@ async fn check_update(config: &Config) -> Result<()> {
         return Ok(());
     }
 
-    update().await.expect("Failed to check for updates");
+    // Never block the router: offline venues and GitHub rate limits are normal.
+    if let Err(err) = update().await {
+        warn!("Update check failed, starting anyway: {:#}", err);
+    }
     Ok(())
 }
 

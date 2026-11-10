@@ -63,3 +63,7 @@ Controller notes are hex in the APC40 mkII protocol (e.g. Arm = 0x30 = 48).
 Router "on" uses channel 13 (blink secondary) with the stored colour (`src/router/led_controller.rs:39-43`).
 When primary == secondary the LED looks solid, so on/off can look the same in the simulator. This is router
 behaviour, not a simulator bug.
+
+**Fixed on `fix/control-map-momentary`:** "on" now clears the primary colour (ch 1 vel 0) before the blink
+(ch 15 = blink 1/4), so the LED blinks colour/off. Daslight sends no NoteOff: NoteOn vel 1 means "on" (keep the
+stored colour, blink), any other velocity means "off" with that colour (solid).

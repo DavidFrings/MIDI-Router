@@ -30,7 +30,6 @@ Name: "german"; MessagesFile: "compiler:Languages\German.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 [Files]
 Source: "{#ProjectDir}\target\release\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#ProjectDir}\target\release\updater.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#ProjectDir}\example.config.toml"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#ProjectDir}\configs\akai-apc40-mk2\akai-apc40-mk2.config.toml"; DestDir: "{app}"; Flags: ignoreversion
 [Icons]

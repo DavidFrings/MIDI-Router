@@ -218,7 +218,7 @@ impl Widget for &App {
     }
 }
 
-fn format_log_line(s: &str) -> Line {
+fn format_log_line(s: &str) -> Line<'_> {
     if let Some(rest) = s.strip_prefix("INFO: ") {
         Line::from(vec!["INFO:  ".green().bold(), rest.white()])
     } else if let Some(rest) = s.strip_prefix("ERROR: ") {

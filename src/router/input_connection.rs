@@ -68,7 +68,9 @@ impl InputConnection {
                 }
             },
             (),
-        )?;
+        )
+        // midir's ALSA ConnectError is not Sync, so `?` can't convert it on Linux
+        .map_err(|err| anyhow!("{}", err))?;
 
         let self_connection = &mut self.connection;
         *self_connection = Some(connection);

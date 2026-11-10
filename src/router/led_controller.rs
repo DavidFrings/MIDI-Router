@@ -1,7 +1,7 @@
 use crate::router::{output_connection::OutputConnection, state_manager::StateManager};
 use anyhow::Result;
 use std::{thread, time::Duration};
-use wmidi::{Channel, MidiMessage, MidiMessage::NoteOn, Note, Velocity};
+use wmidi::{Channel, MidiMessage::NoteOn, Note, Velocity};
 
 pub struct LedController;
 
@@ -36,32 +36,17 @@ impl LedController {
 
         let velocity = Velocity::from_u8_lossy(*color);
 
-        let message = if *state {
-            NoteOn(Channel::Ch13, note, velocity) // When Note is ON, use Channel 13 for LED ON (Blinking)
+        if *state {
+            // Blink alternates secondary and primary colour: clear primary so the blink is visible.
+            to_controller_connection.send(NoteOn(Channel::Ch1, note, Velocity::MIN))?;
+            to_controller_connection.send(NoteOn(Channel::Ch15, note, velocity))?; // Ch15 = secondary, blinking 1/4
         } else {
-            NoteOn(Channel::Ch1, note, velocity)
-        };
-
-        self.send_led_message(to_controller_connection, message)?;
+            to_controller_connection.send(NoteOn(Channel::Ch1, note, velocity))?;
+        }
 
         thread::sleep(Duration::from_micros(25)); // Small delay to ensure the port is not overwhelmed
 
         Ok(())
     }
 
-    fn send_led_message(
-        &self,
-        output_connection: &mut OutputConnection,
-        msg: MidiMessage,
-    ) -> Result<()> {
-        let connection = &mut output_connection.connection;
-
-        if let Some(conn) = connection {
-            let mut buffer = [0_u8; 3];
-            let length = msg.copy_to_slice(&mut buffer)?;
-            conn.send(&buffer[..length])?;
-        }
-
-        Ok(())
-    }
 }

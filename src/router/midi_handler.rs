@@ -10,6 +10,9 @@ use wmidi::{
     Note, Velocity,
 };
 
+/// shortcut: Daslight's "on" velocity is hardcoded; make it a config key if another software differs.
+const SOFTWARE_ON_VELOCITY: u8 = 1;
+
 pub struct MidiHandler {
     state_manager: StateManager,
     mapping_config: MappingConfig,
@@ -20,13 +23,9 @@ impl MidiHandler {
     pub fn new(config: MappingConfig) -> Self {
         Self {
             state_manager: StateManager::new(),
-            mapping_config: MappingConfig::new(config),
+            mapping_config: config,
             led_controller: LedController::new(),
         }
-    }
-
-    pub fn _get_state_manager(&self) -> &StateManager {
-        &self.state_manager
     }
 
     pub fn handle_controller_msg(
@@ -93,7 +92,14 @@ impl MidiHandler {
             NoteOn(channel, note, velocity) => {
                 let remapped_note = self.mapping_config.remap_note(&channel, note)?;
 
-                if self.mapping_config.is_toggle_note(remapped_note) {
+                if self.mapping_config.is_momentary_note(remapped_note) {
+                    self.momentary_note_handler(
+                        to_controller_connection,
+                        to_software_connection,
+                        current_bank,
+                        NoteOn(*current_bank, remapped_note, velocity),
+                    )?;
+                } else if self.mapping_config.is_toggle_note(remapped_note) {
                     self.toggle_note_handler(
                         to_controller_connection,
                         to_software_connection,
@@ -109,10 +115,17 @@ impl MidiHandler {
                 }
             }
 
-            NoteOff(channel, note, _velocity) => {
+            NoteOff(channel, note, velocity) => {
                 let remapped_note = self.mapping_config.remap_note(&channel, note)?;
 
-                if self.mapping_config.is_toggle_note(remapped_note) {
+                if self.mapping_config.is_momentary_note(remapped_note) {
+                    self.momentary_note_handler(
+                        to_controller_connection,
+                        to_software_connection,
+                        current_bank,
+                        NoteOff(*current_bank, remapped_note, velocity),
+                    )?;
+                } else if self.mapping_config.is_toggle_note(remapped_note) {
                     self.led_controller.refresh_single_led(
                         to_controller_connection,
                         &mut self.state_manager,
@@ -130,11 +143,11 @@ impl MidiHandler {
             ControlChange(channel, control, velocity) => {
                 let remapped_control = self.mapping_config.remap_control(&channel, control)?;
                 let message = ControlChange(*current_bank, remapped_control, velocity);
-                self.send_midi_message(to_software_connection, message)?;
+                to_software_connection.send(message)?;
             }
 
             _ => {
-                self.forward_raw_message(to_software_connection, &midi_message)?;
+                to_software_connection.send(midi_message)?;
             }
         }
 
@@ -148,17 +161,21 @@ impl MidiHandler {
     ) -> Result<()> {
         match midi_message {
             NoteOn(channel, note, velocity) => {
-                if self.mapping_config.is_toggle_note(note) {
-                    self.state_manager.set_note_state(&channel, note, true)?;
-                    self.state_manager
-                        .set_note_color(&channel, note, velocity)?;
+                let momentary = self.mapping_config.is_momentary_note(note);
 
-                    self.led_controller.refresh_single_led(
-                        to_controller_connection,
-                        &mut self.state_manager,
-                        &channel,
-                        note,
-                    )?;
+                if momentary || self.mapping_config.is_toggle_note(note) {
+                    // Daslight sends no NoteOff: "on" is NoteOn vel 1, "off" is NoteOn vel <colour>.
+                    let on = u8::from(velocity) == SOFTWARE_ON_VELOCITY;
+                    // Momentary state follows the button; Daslight only supplies the colour.
+                    if !momentary {
+                        self.state_manager.set_note_state(&channel, note, on)?;
+                    }
+                    if !on {
+                        self.state_manager
+                            .set_note_color(&channel, note, velocity)?;
+                    }
+
+                    self.refresh_led_if_visible(to_controller_connection, &channel, note)?;
                 } else {
                     warn!(
                         "Toggle notes doesn't include note (Software On): {}",
@@ -171,13 +188,8 @@ impl MidiHandler {
                 if self.mapping_config.is_toggle_note(note) {
                     self.state_manager.set_note_state(&channel, note, false)?;
 
-                    self.led_controller.refresh_single_led(
-                        to_controller_connection,
-                        &mut self.state_manager,
-                        &channel,
-                        note,
-                    )?;
-                } else {
+                    self.refresh_led_if_visible(to_controller_connection, &channel, note)?;
+                } else if !self.mapping_config.is_momentary_note(note) {
                     warn!(
                         "Toggle notes doesn't include note (Software Off): {}",
                         u8::from(note)
@@ -192,6 +204,25 @@ impl MidiHandler {
         Ok(())
     }
 
+    /// Feedback for a bank that isn't shown must not overwrite the visible pads.
+    fn refresh_led_if_visible(
+        &mut self,
+        to_controller_connection: &mut OutputConnection,
+        bank: &Channel,
+        note: Note,
+    ) -> Result<()> {
+        if bank != self.state_manager.get_current_bank() {
+            return Ok(());
+        }
+
+        self.led_controller.refresh_single_led(
+            to_controller_connection,
+            &mut self.state_manager,
+            bank,
+            note,
+        )
+    }
+
     fn toggle_note_handler(
         &mut self,
         to_controller_connection: &mut OutputConnection,
@@ -202,7 +233,7 @@ impl MidiHandler {
     ) -> Result<()> {
         self.state_manager.toggle_note_state(bank, note)?;
         let message = NoteOn(*bank, note, velocity);
-        self.send_midi_message(to_software_connection, message)?;
+        to_software_connection.send(message)?;
 
         self.led_controller.refresh_single_led(
             to_controller_connection,
@@ -214,27 +245,180 @@ impl MidiHandler {
         Ok(())
     }
 
-    fn forward_raw_message(
-        &self,
-        output_connection: &mut OutputConnection,
-        message: &MidiMessage,
+    /// Forwards press/release as-is; LED is on only while held.
+    fn momentary_note_handler(
+        &mut self,
+        to_controller_connection: &mut OutputConnection,
+        to_software_connection: &mut OutputConnection,
+        bank: &Channel,
+        message: MidiMessage<'static>,
     ) -> Result<()> {
-        self.send_midi_message(output_connection, message.clone())
-    }
+        let (note, pressed) = match message {
+            NoteOn(_, note, _) => (note, true),
+            NoteOff(_, note, _) => (note, false),
+            _ => return Ok(()),
+        };
 
-    fn send_midi_message(
-        &self,
-        output_connection: &mut OutputConnection,
-        message: MidiMessage,
-    ) -> Result<()> {
-        let self_connection = &mut output_connection.connection;
+        self.state_manager.set_note_state(bank, note, pressed)?;
+        to_software_connection.send(message)?;
 
-        if let Some(connection) = self_connection {
-            let mut buffer = [0_u8; 3];
-            let length = message.copy_to_slice(&mut buffer)?;
-            connection.send(&buffer[..length])?;
-        }
+        self.led_controller.refresh_single_led(
+            to_controller_connection,
+            &mut self.state_manager,
+            bank,
+            note,
+        )?;
 
         Ok(())
+    }
+
+
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn handler() -> MidiHandler {
+        let config: MappingConfig = toml::from_str(
+            "toggle_notes = [0]\nmomentary_notes = [82]\nnote_map = []\ncontrol_map = []",
+        )
+        .unwrap();
+        MidiHandler::new(config)
+    }
+
+    fn is_on(handler: &mut MidiHandler, note: u8) -> bool {
+        is_on_in(handler, Channel::Ch1, note)
+    }
+
+    fn is_on_in(handler: &mut MidiHandler, bank: Channel, note: u8) -> bool {
+        *handler
+            .state_manager
+            .get_note_state_and_color(&bank, Note::from_u8_lossy(note))
+            .unwrap()
+            .0
+    }
+
+    fn color_in(handler: &mut MidiHandler, bank: Channel, note: u8) -> u8 {
+        *handler
+            .state_manager
+            .get_note_state_and_color(&bank, Note::from_u8_lossy(note))
+            .unwrap()
+            .1
+    }
+
+    /// Feeds a Daslight message; returns the bytes sent to the controller.
+    fn feedback(handler: &mut MidiHandler, msg: MidiMessage<'static>) -> Vec<Vec<u8>> {
+        let mut to_ctrl = OutputConnection::new();
+        handler.handle_software_msg(msg, &mut to_ctrl).unwrap();
+        to_ctrl.sent
+    }
+
+    fn cc(channel: Channel, control: u8) -> MidiMessage<'static> {
+        ControlChange(channel, wmidi::ControlFunction::from(wmidi::U7::from_u8_lossy(control)), wmidi::U7::MIN)
+    }
+
+    fn press(handler: &mut MidiHandler, msg: MidiMessage<'static>) {
+        // Unconnected outputs: sends are no-ops, state still updates.
+        let (mut to_ctrl, mut to_sw) = (OutputConnection::new(), OutputConnection::new());
+        handler.handle_controller_msg(msg, &mut to_ctrl, &mut to_sw).unwrap();
+    }
+
+    #[test]
+    fn momentary_note_is_on_while_held_and_off_after_release() {
+        let mut h = handler();
+        let note = Note::from_u8_lossy(82);
+
+        press(&mut h, NoteOn(Channel::Ch1, note, Velocity::MAX));
+        assert!(is_on(&mut h, 82));
+
+        press(&mut h, NoteOff(Channel::Ch1, note, Velocity::MAX));
+        assert!(!is_on(&mut h, 82));
+    }
+
+    #[test]
+    fn toggle_note_stays_on_after_release() {
+        let mut h = handler();
+        let note = Note::from_u8_lossy(0);
+
+        press(&mut h, NoteOn(Channel::Ch1, note, Velocity::MAX));
+        press(&mut h, NoteOff(Channel::Ch1, note, Velocity::MAX));
+        assert!(is_on(&mut h, 0));
+    }
+
+    #[test]
+    fn cc16_switches_bank_so_pads_toggle_in_that_bank() {
+        let mut h = handler();
+
+        press(&mut h, cc(Channel::Ch3, 16));
+        press(&mut h, NoteOn(Channel::Ch1, Note::from_u8_lossy(0), Velocity::MAX));
+
+        assert!(is_on_in(&mut h, Channel::Ch3, 0));
+        assert!(!is_on_in(&mut h, Channel::Ch1, 0));
+    }
+
+    #[test]
+    fn feedback_for_hidden_bank_is_stored_but_not_sent_to_leds() {
+        let mut h = handler(); // current bank is Ch1
+        let color = Velocity::from_u8_lossy(9);
+
+        let sent = feedback(&mut h, NoteOn(Channel::Ch3, Note::from_u8_lossy(0), color));
+
+        assert!(sent.is_empty());
+        assert_eq!(color_in(&mut h, Channel::Ch3, 0), 9);
+    }
+
+    #[test]
+    fn feedback_for_current_bank_updates_the_led() {
+        let mut h = handler();
+        let color = Velocity::from_u8_lossy(9);
+
+        let sent = feedback(&mut h, NoteOn(Channel::Ch1, Note::from_u8_lossy(0), color));
+
+        assert!(!sent.is_empty());
+    }
+
+    #[test]
+    fn feedback_with_color_means_off_and_shows_the_color_solid() {
+        let mut h = handler();
+
+        let sent = feedback(&mut h, NoteOn(Channel::Ch1, Note::from_u8_lossy(0), Velocity::from_u8_lossy(45)));
+
+        assert!(!is_on(&mut h, 0));
+        assert_eq!(color_in(&mut h, Channel::Ch1, 0), 45);
+        assert_eq!(sent, vec![vec![0x90, 0, 45]]);
+    }
+
+    #[test]
+    fn feedback_velocity_1_means_on_and_blinks_slowly_in_the_stored_color() {
+        let mut h = handler();
+        feedback(&mut h, NoteOn(Channel::Ch1, Note::from_u8_lossy(0), Velocity::from_u8_lossy(45)));
+
+        let sent = feedback(&mut h, NoteOn(Channel::Ch1, Note::from_u8_lossy(0), Velocity::from_u8_lossy(1)));
+
+        assert!(is_on(&mut h, 0));
+        assert_eq!(color_in(&mut h, Channel::Ch1, 0), 45);
+        // Primary off first, so the blink alternates colour/off; ch 15 = blink 1/4.
+        assert_eq!(sent, vec![vec![0x90, 0, 0], vec![0x9E, 0, 45]]);
+    }
+
+    #[test]
+    fn feedback_velocity_1_keeps_momentary_color() {
+        let mut h = handler();
+        feedback(&mut h, NoteOn(Channel::Ch1, Note::from_u8_lossy(82), Velocity::from_u8_lossy(5)));
+
+        feedback(&mut h, NoteOn(Channel::Ch1, Note::from_u8_lossy(82), Velocity::from_u8_lossy(1)));
+
+        assert_eq!(color_in(&mut h, Channel::Ch1, 82), 5);
+    }
+
+    #[test]
+    fn feedback_stores_color_for_momentary_notes() {
+        let mut h = handler();
+        let color = Velocity::from_u8_lossy(5);
+
+        feedback(&mut h, NoteOn(Channel::Ch1, Note::from_u8_lossy(82), color));
+
+        assert_eq!(color_in(&mut h, Channel::Ch1, 82), 5);
     }
 }
