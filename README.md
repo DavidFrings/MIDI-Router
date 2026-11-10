@@ -22,6 +22,10 @@ toggles or momentary buttons, and drives the controller LEDs from the software's
 Download `midi-router-installer.exe` from the latest
 [GitHub release](https://github.com/DavidFrings/MIDI-Router/releases) and run it.
 
+The installer asks which `config.toml` to use: keep the current one (preselected on updates), the
+Akai APC40 mkII template (preselected on a fresh install) or import your own file. The router is
+ready to start afterwards.
+
 ## Requirements
 
 - Windows
