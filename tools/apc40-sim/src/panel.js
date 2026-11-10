@@ -173,7 +173,13 @@ export function buildPanel(svg, h) {
         const steps = Math.trunc(acc / 2);
         if (steps) { acc -= steps * 2; turn(it.id, steps); }
       });
-      g.addEventListener('wheel', (e) => { e.preventDefault(); if (e.deltaY) turn(it.id, e.deltaY < 0 ? 1 : -1); }, { passive: false });
+      let wacc = 0; // accumulated wheel: 100 px (pixels), 3 lines or 1 page per step
+      g.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        wacc += e.deltaY / [100, 3, 1][e.deltaMode];
+        const steps = -Math.trunc(wacc);
+        if (steps) { wacc += steps; turn(it.id, steps); }
+      }, { passive: false });
     } else {
       renderFader(g, it);
       const valueAt = (e) => {
