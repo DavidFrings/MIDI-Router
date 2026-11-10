@@ -24,10 +24,6 @@ struct ControlMap {
 }
 
 impl MappingConfig {
-    pub fn new(config: MappingConfig) -> Self {
-        config
-    }
-
     pub fn is_toggle_note(&self, conn_note: Note) -> bool {
         self.toggle_notes.contains(&u8::from(conn_note))
     }

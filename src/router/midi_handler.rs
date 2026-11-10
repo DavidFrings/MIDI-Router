@@ -20,13 +20,9 @@ impl MidiHandler {
     pub fn new(config: MappingConfig) -> Self {
         Self {
             state_manager: StateManager::new(),
-            mapping_config: MappingConfig::new(config),
+            mapping_config: config,
             led_controller: LedController::new(),
         }
-    }
-
-    pub fn _get_state_manager(&self) -> &StateManager {
-        &self.state_manager
     }
 
     pub fn handle_controller_msg(
@@ -144,11 +140,11 @@ impl MidiHandler {
             ControlChange(channel, control, velocity) => {
                 let remapped_control = self.mapping_config.remap_control(&channel, control)?;
                 let message = ControlChange(*current_bank, remapped_control, velocity);
-                self.send_midi_message(to_software_connection, message)?;
+                to_software_connection.send(message)?;
             }
 
             _ => {
-                self.forward_raw_message(to_software_connection, &midi_message)?;
+                to_software_connection.send(midi_message)?;
             }
         }
 
@@ -216,7 +212,7 @@ impl MidiHandler {
     ) -> Result<()> {
         self.state_manager.toggle_note_state(bank, note)?;
         let message = NoteOn(*bank, note, velocity);
-        self.send_midi_message(to_software_connection, message)?;
+        to_software_connection.send(message)?;
 
         self.led_controller.refresh_single_led(
             to_controller_connection,
@@ -243,7 +239,7 @@ impl MidiHandler {
         };
 
         self.state_manager.set_note_state(bank, note, pressed)?;
-        self.send_midi_message(to_software_connection, message)?;
+        to_software_connection.send(message)?;
 
         self.led_controller.refresh_single_led(
             to_controller_connection,
@@ -255,29 +251,7 @@ impl MidiHandler {
         Ok(())
     }
 
-    fn forward_raw_message(
-        &self,
-        output_connection: &mut OutputConnection,
-        message: &MidiMessage,
-    ) -> Result<()> {
-        self.send_midi_message(output_connection, message.clone())
-    }
 
-    fn send_midi_message(
-        &self,
-        output_connection: &mut OutputConnection,
-        message: MidiMessage,
-    ) -> Result<()> {
-        let self_connection = &mut output_connection.connection;
-
-        if let Some(connection) = self_connection {
-            let mut buffer = [0_u8; 3];
-            let length = message.copy_to_slice(&mut buffer)?;
-            connection.send(&buffer[..length])?;
-        }
-
-        Ok(())
-    }
 }
 
 #[cfg(test)]
