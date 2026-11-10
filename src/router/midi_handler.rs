@@ -10,8 +10,8 @@ use wmidi::{
     Note, Velocity,
 };
 
-/// shortcut: Daslight's "off" velocity is hardcoded; make it a config key if another software differs.
-const SOFTWARE_OFF_VELOCITY: u8 = 1;
+/// shortcut: Daslight's "on" velocity is hardcoded; make it a config key if another software differs.
+const SOFTWARE_ON_VELOCITY: u8 = 1;
 
 pub struct MidiHandler {
     state_manager: StateManager,
@@ -164,13 +164,13 @@ impl MidiHandler {
                 let momentary = self.mapping_config.is_momentary_note(note);
 
                 if momentary || self.mapping_config.is_toggle_note(note) {
-                    // Daslight sends no NoteOff: "off" is NoteOn vel 1, "on" is NoteOn vel <colour>.
-                    let off = u8::from(velocity) == SOFTWARE_OFF_VELOCITY;
+                    // Daslight sends no NoteOff: "on" is NoteOn vel 1, "off" is NoteOn vel <colour>.
+                    let on = u8::from(velocity) == SOFTWARE_ON_VELOCITY;
                     // Momentary state follows the button; Daslight only supplies the colour.
                     if !momentary {
-                        self.state_manager.set_note_state(&channel, note, !off)?;
+                        self.state_manager.set_note_state(&channel, note, on)?;
                     }
-                    if !off {
+                    if !on {
                         self.state_manager
                             .set_note_color(&channel, note, velocity)?;
                     }
@@ -379,26 +379,27 @@ mod tests {
     }
 
     #[test]
-    fn feedback_with_color_turns_on_and_blinks_in_that_color() {
+    fn feedback_with_color_means_off_and_shows_the_color_solid() {
         let mut h = handler();
 
         let sent = feedback(&mut h, NoteOn(Channel::Ch1, Note::from_u8_lossy(0), Velocity::from_u8_lossy(45)));
 
-        assert!(is_on(&mut h, 0));
-        // Primary off first, so the blink alternates colour/off and stays visible.
-        assert_eq!(sent, vec![vec![0x90, 0, 0], vec![0x9C, 0, 45]]);
+        assert!(!is_on(&mut h, 0));
+        assert_eq!(color_in(&mut h, Channel::Ch1, 0), 45);
+        assert_eq!(sent, vec![vec![0x90, 0, 45]]);
     }
 
     #[test]
-    fn feedback_velocity_1_means_off_and_keeps_the_color_solid() {
+    fn feedback_velocity_1_means_on_and_blinks_slowly_in_the_stored_color() {
         let mut h = handler();
         feedback(&mut h, NoteOn(Channel::Ch1, Note::from_u8_lossy(0), Velocity::from_u8_lossy(45)));
 
         let sent = feedback(&mut h, NoteOn(Channel::Ch1, Note::from_u8_lossy(0), Velocity::from_u8_lossy(1)));
 
-        assert!(!is_on(&mut h, 0));
+        assert!(is_on(&mut h, 0));
         assert_eq!(color_in(&mut h, Channel::Ch1, 0), 45);
-        assert_eq!(sent, vec![vec![0x90, 0, 45]]);
+        // Primary off first, so the blink alternates colour/off; ch 15 = blink 1/4.
+        assert_eq!(sent, vec![vec![0x90, 0, 0], vec![0x9E, 0, 45]]);
     }
 
     #[test]

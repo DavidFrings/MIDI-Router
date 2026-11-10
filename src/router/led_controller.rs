@@ -39,7 +39,7 @@ impl LedController {
         if *state {
             // Blink alternates secondary and primary colour: clear primary so the blink is visible.
             to_controller_connection.send(NoteOn(Channel::Ch1, note, Velocity::MIN))?;
-            to_controller_connection.send(NoteOn(Channel::Ch13, note, velocity))?; // Ch13 = secondary, blinking 1/16
+            to_controller_connection.send(NoteOn(Channel::Ch15, note, velocity))?; // Ch15 = secondary, blinking 1/4
         } else {
             to_controller_connection.send(NoteOn(Channel::Ch1, note, velocity))?;
         }
