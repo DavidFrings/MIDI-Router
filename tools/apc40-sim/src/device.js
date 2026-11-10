@@ -19,7 +19,8 @@ export class Device {
 
   _get(id) { const c = byId(id); if (!c) throw new Error(`unknown control: ${id}`); return c; }
   // Banked controls keep separate state per bank (9 banks).
-  _key(c) { return c.banked ? `${c.id}@${this.bank}` : c.id; }
+  // Mode 1/2 have no banking: banked controls use the bank-0 slot.
+  _key(c) { return c.banked ? `${c.id}@${this.mode === 0 ? this.bank : 0}` : c.id; }
   _led(c) { const k = this._key(c); if (!this._leds.has(k)) this._leds.set(k, newLed()); return this._leds.get(k); }
   _ring(c) { const k = this._key(c); if (!this._rings.has(k)) this._rings.set(k, { type: 1, value: 0 }); return this._rings.get(k); }
 
@@ -66,8 +67,7 @@ export class Device {
     const k = this._key(c);
     if ((this._vals.get(k) ?? 0) === v) return [];
     this._vals.set(k, v);
-    const ch = c.track ?? (c.banked && this.mode === 0 ? this.bank : 0);
-    return [[0xb0 | ch, c.cc, v]];
+    return [[0xb0 | this._channel(c), c.cc, v]];
   }
 
   turn(id, delta) {
