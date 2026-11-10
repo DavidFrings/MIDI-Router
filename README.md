@@ -80,9 +80,8 @@ Raise `version` in `Cargo.toml` and merge to `main`. The `Release` workflow
 release `v<version>` with `midi-router-installer.exe`, `midi-router.exe` and `example.config.toml`.
 If that release already exists, the run does nothing.
 
-To build the installer locally, install Inno Setup 6, run `installer\gen-installer.cmd` from the
-`installer` folder and compile in Inno Setup. That script writes your local path into
-`installer.iss`, so do not commit that change.
+To build the installer locally, install Inno Setup 6 and run `installer\gen-installer.cmd`. It builds
+the router and writes `installer\midi-router-installer.exe`.
 
 ## Roadmap
 
