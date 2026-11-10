@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>APC40 mkII Simulator</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header id="bar">
+    <label>In <select id="in"></select></label>
+    <label>Out <select id="out"></select></label>
+    <span id="mode" class="pill">Mode 0 Generic</span>
+    <span id="bank" class="pill">Bank 1</span>
+    <span id="src" class="pill">Internal</span>
+    <label>BPM <input id="bpm" type="number" min="20" max="300" step="1" value="120"></label>
+    <span id="tps" class="dim">clock: 0 ticks/s</span>
+    <button id="power" type="button">Power cycle</button>
+    <button id="toggle-mon" type="button">Monitor</button>
+  </header>
+  <div id="banner" hidden></div>
+  <svg id="panel" viewBox="0 0 1280 720" xmlns="http://www.w3.org/2000/svg"></svg>
+  <section id="monitor">
+    <div class="mon-bar"><span>MIDI monitor</span><button id="clear" type="button">Clear</button></div>
+    <div id="log"></div>
+  </section>
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>

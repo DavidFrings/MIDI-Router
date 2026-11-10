@@ -1,0 +1,112 @@
+// Entry point: wires device + clock + panel to Web MIDI, the top bar and the monitor.
+import { Device } from './device.js';
+import { Clock } from './clock.js';
+import { describe } from './describe.js';
+import { buildPanel, paint, unlatch } from './panel.js';
+import { openMidi } from './midi.js';
+
+const $ = (id) => document.getElementById(id);
+const device = new Device();
+const clock = new Clock();
+const svg = $('panel');
+const hex = (b) => b.map((x) => x.toString(16).toUpperCase().padStart(2, '0')).join(' ');
+let midi = null;
+
+// ---- monitor ----
+const logEl = $('log');
+const MAX_LINES = 500;
+function line(text, cls) {
+  const atBottom = logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight < 4;
+  const d = document.createElement('div');
+  d.textContent = text;
+  if (cls) d.className = cls;
+  logEl.appendChild(d);
+  while (logEl.childElementCount > MAX_LINES) logEl.firstChild.remove();
+  if (atBottom) logEl.scrollTop = logEl.scrollHeight;
+}
+$('clear').onclick = () => { logEl.textContent = ''; };
+$('toggle-mon').onclick = () => $('monitor').classList.toggle('collapsed');
+
+// ---- MIDI out / in ----
+function out(msgs) {
+  for (const m of msgs) {
+    let sent = false;
+    try { sent = midi ? midi.send(m) : false; } catch (e) { line(`send failed: ${e.message}`, 'warn'); }
+    try { line(`→ ${hex(m)}  ${describe(m)}${sent ? '' : ' (not sent)'}`); } catch (e) { line(`error: ${e.message}`, 'warn'); }
+  }
+}
+let ticks = 0;
+function incoming(bytes) {
+  try {
+    const now = performance.now();
+    if (bytes[0] === 0xf8) { ticks++; clock.tick(now); return; }
+    line(`← ${hex(bytes)}  ${describe(bytes)}`);
+    const { replies, warnings } = device.receive(bytes, clock.beats(now));
+    for (const w of warnings) line(`! ${w}`, 'warn');
+    out(replies);
+  } catch (e) { line(`error: ${e.message}`, 'warn'); }
+}
+
+buildPanel(svg, {
+  press: (id) => out(device.press(id)),
+  release: (id) => out(device.release(id)),
+  setValue: (id, v) => out(device.setValue(id, v)),
+  turn: (id, d) => out(device.turn(id, d)),
+});
+
+// ---- top bar ----
+const sel = { in: $('in'), out: $('out') };
+const MODES = ['Mode 0 Generic', 'Mode 1 Ableton Live', 'Mode 2 Alternate Ableton Live'];
+// Prefer the "(B)" end: "(A)" is the router's endpoint.
+const defaultPort = (ports) => ports.find((p) => /APC40.*\(B\)/i.test(p.name)) ?? ports.find((p) => /APC40/i.test(p.name));
+function fill(select, ports, keep) {
+  select.textContent = '';
+  select.add(new Option('— none —', ''));
+  for (const p of ports) select.add(new Option(p.name, p.id));
+  const pick = ports.find((p) => p.id === keep) ?? (keep === undefined ? defaultPort(ports) : null);
+  select.value = pick ? pick.id : '';
+}
+function apply() { midi?.use(sel.in.value, sel.out.value); }
+function syncPorts(initial) {
+  for (const [k, ports, label] of [['in', midi.inputs, 'input'], ['out', midi.outputs, 'output']]) {
+    const prev = initial ? undefined : sel[k].value || undefined; // nothing selected: let defaultPort pick a new (B)
+    fill(sel[k], ports, prev);
+    if (prev && !sel[k].value) line(`MIDI ${label} port disappeared, selection reset to none`, 'warn');
+  }
+  apply();
+}
+sel.in.onchange = sel.out.onchange = apply;
+$('power').onclick = () => { unlatch(svg); device.reset(); ticks = 0; line('Power cycle: device state reset'); };
+$('bpm').onchange = (e) => {
+  const v = Math.min(300, Math.max(20, Number(e.target.value) || 120));
+  e.target.value = v;
+  clock.setBpm(v, performance.now());
+};
+
+openMidi(incoming).then((m) => {
+  midi = m;
+  if (!m.sysexOk) { const b = $('banner'); b.textContent = 'SysEx disabled — device inquiry/introduction replies not possible'; b.hidden = false; }
+  m.onChange = () => syncPorts(false); syncPorts(true);
+}).catch((e) => {
+  const b = $('banner'); b.textContent = e.message; b.hidden = false;
+  fill(sel.in, [], null); fill(sel.out, [], null);
+});
+
+// ---- frame loop: panel + cheap status updates ----
+const txt = (el, v) => { if (el.textContent !== v) el.textContent = v; };
+let tickT = performance.now();
+const seen = new Set();
+function frame() {
+  requestAnimationFrame(frame); // first, so an exception never stops the loop
+  try {
+    const t = performance.now();
+    paint(svg, device, clock.beats(t));
+    txt($('mode'), MODES[device.mode] ?? `Mode ${device.mode}`);
+    txt($('bank'), device.mode === 0 ? `Bank ${device.bank + 1}` : 'No banking');
+    txt($('src'), clock.source(t) === 'midi' ? 'MIDI clock' : 'Internal');
+    if (t - tickT >= 1000) { txt($('tps'), `clock: ${Math.round((ticks * 1000) / (t - tickT))} ticks/s`); ticks = 0; tickT = t; }
+  } catch (e) {
+    if (!seen.has(e.message)) { seen.add(e.message); line(`error: ${e.message}`, 'warn'); }
+  }
+}
+requestAnimationFrame(frame);
