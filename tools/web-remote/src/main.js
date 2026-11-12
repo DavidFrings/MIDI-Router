@@ -269,6 +269,18 @@ document.addEventListener('contextmenu', (e) => e.preventDefault());
 document.addEventListener('gesturestart', (e) => e.preventDefault()); // iOS pinch zoom
 document.addEventListener('dblclick', (e) => e.preventDefault());
 
+// Fullscreen toggle; iPadOS Safari only has the webkit-prefixed API, iPhone Safari has none (button stays hidden).
+const root = document.documentElement;
+const enterFs = root.requestFullscreen || root.webkitRequestFullscreen;
+const exitFs = document.exitFullscreen || document.webkitExitFullscreen;
+if (enterFs) {
+  $('fullscreen').hidden = false;
+  $('fullscreen').addEventListener('click', () => {
+    if (document.fullscreenElement || document.webkitFullscreenElement) exitFs.call(document);
+    else enterFs.call(root);
+  });
+}
+
 drawPages();
 faderValues.forEach((_, i) => drawFader(i));
 setOnline(false, 'Connecting…');
