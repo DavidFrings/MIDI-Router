@@ -73,3 +73,22 @@ export function savePage(storage, page) {
     // private mode / blocked storage: page just is not remembered
   }
 }
+
+/**
+ * Releases that failed to reach the router. The server never releases on its own,
+ * so they are re-sent before anything else once the connection is back.
+ */
+export function createPendingReleases() {
+  const items = new Map(); // `${page}:${note}` -> { page, note }
+  return {
+    add: (page, note) => items.set(`${page}:${note}`, { page, note }),
+    get size() { return items.size; },
+    /** Sends each in order; removes only on success; stops and rethrows at the first failure. */
+    async flush(send) {
+      for (const [key, { page, note }] of [...items]) {
+        await send(page, note);
+        items.delete(key);
+      }
+    },
+  };
+}

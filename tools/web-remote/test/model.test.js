@@ -1,6 +1,6 @@
 import test, { mock } from 'node:test';
 import assert from 'node:assert/strict';
-import { GRID, padLook, createFaderLock, throttleLatest, loadPage, savePage } from '../src/model.js';
+import { GRID, padLook, createFaderLock, throttleLatest, loadPage, savePage, createPendingReleases } from '../src/model.js';
 import { RGB } from '../src/colors.js';
 
 test('GRID top row is 32-39 plus scene 82', () => {
@@ -74,4 +74,28 @@ test('savePage round-trips and survives throwing storage', () => {
   savePage(s, 4);
   assert.equal(loadPage(s), 4);
   savePage({ setItem() { throw new Error('quota'); } }, 4);
+});
+
+test('failed release stays pending until a flush succeeds', async () => {
+  const pending = createPendingReleases();
+  pending.add(2, 5);
+  pending.add(2, 5); // same key once
+  pending.add(3, 82);
+  assert.equal(pending.size, 2);
+
+  const sent = [];
+  let fail = true;
+  const send = async (page, note) => {
+    sent.push([page, note]);
+    if (fail) throw new Error('503');
+  };
+  await assert.rejects(pending.flush(send));
+  assert.equal(pending.size, 2);
+
+  fail = false;
+  await pending.flush(send);
+  assert.equal(pending.size, 0);
+  assert.deepEqual(sent.slice(-2), [[2, 5], [3, 82]]);
+  await pending.flush(send); // empty flush sends nothing
+  assert.equal(sent.length, 3);
 });

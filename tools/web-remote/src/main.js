@@ -1,5 +1,5 @@
 // DOM wiring only; testable logic lives in model.js.
-import { GRID, padLook, createFaderLock, throttleLatest, loadPage, savePage } from './model.js';
+import { GRID, padLook, createFaderLock, throttleLatest, loadPage, savePage, createPendingReleases } from './model.js';
 import { createApi } from './api.js';
 
 const PIN_KEY = 'webRemote.pin';
@@ -20,6 +20,7 @@ const padEls = new Map(); // note -> element
 const faderEls = [];
 const faderValues = Array(9).fill(null);
 const held = new Map(); // note -> { page, pointerId }
+const pendingReleases = createPendingReleases();
 
 // ---------- build DOM ----------
 for (let p = 1; p <= 9; p++) {
@@ -118,6 +119,8 @@ function connect() {
 async function resync() {
   const gen = ++syncGen;
   try {
+    // Failed releases first: a press must never stay stuck on the router.
+    await pendingReleases.flush(sendRelease);
     const state = await api.state(page);
     if (gen !== syncGen || state.page !== page) return; // page changed meanwhile
     render(state);
@@ -182,7 +185,15 @@ function padUp(e, note, el) {
   if (!h || (e && h.pointerId !== e.pointerId)) return;
   held.delete(note);
   el.classList.remove('held');
-  api.press(h.page, note, false).catch(handleError);
+  sendRelease(h.page, note).catch((e) => {
+    pendingReleases.add(h.page, note);
+    handleError(e);
+  });
+}
+
+// 400 = router rejects the input, so retrying can never succeed; treat as done.
+function sendRelease(p, note) {
+  return api.press(p, note, false).catch((e) => { if (e.status !== 400) throw e; });
 }
 
 function releaseAll() {
