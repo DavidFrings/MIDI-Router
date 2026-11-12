@@ -74,4 +74,17 @@ mod tests {
                 .unwrap();
         assert_eq!(c.pin, "4711");
     }
+
+    #[test]
+    fn config_templates_parse() {
+        for t in [
+            include_str!("../../example.config.toml"),
+            include_str!("../../configs/akai-apc40-mk2/akai-apc40-mk2.config.toml"),
+        ] {
+            let c: Config = toml::from_str(t).unwrap();
+            assert_eq!(c.api.port, 80);
+            assert_eq!(c.api.bind_address, "0.0.0.0");
+            assert_eq!(c.api.pin, "");
+        }
+    }
 }

@@ -32,11 +32,15 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Source: "{#ProjectDir}\target\release\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#ProjectDir}\example.config.toml"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#ProjectDir}\configs\akai-apc40-mk2\akai-apc40-mk2.config.toml"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#ProjectDir}\tools\web-remote\*"; DestDir: "{app}\web-remote"; Excludes: "test,package.json,README.md"; Flags: ignoreversion recursesubdirs
 [Icons]
 Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; Tasks: desktopicon
 [Run]
 Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
+Filename: "netsh"; Parameters: "advfirewall firewall add rule name=""MIDI Router"" dir=in action=allow program=""{app}\{#MyAppExeName}"" profile=private,public"; Flags: runhidden; Check: IsAdminInstallMode
+[UninstallRun]
+Filename: "netsh"; Parameters: "advfirewall firewall delete rule name=""MIDI Router"""; RunOnceId: "DelFirewallRule"; Flags: runhidden
 [Code]
 // The router reads config.toml from its working directory ({app}, see WorkingDir above).
 var
