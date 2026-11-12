@@ -273,7 +273,16 @@ impl MidiHandler {
                 }
             }
 
-            ControlChange(_, _, _) => {}
+            ControlChange(bank, control, value) => {
+                if let Some(index) = self.mapping_config.software_fader_index(u8::from(control)) {
+                    let value = u8::from(value);
+                    if self.fader_state.software_set(bank.index() as usize, index, value, Instant::now()) {
+                        if let Some(events) = &self.events {
+                            let _ = events.send(RemoteEvent::Fader { page: bank.index() + 1, index, value });
+                        }
+                    }
+                }
+            }
             _ => {}
         }
 
@@ -607,6 +616,44 @@ mod tests {
 
         assert_eq!(sent, vec![vec![0xB0, 1, 64]]);
         assert_eq!(rx.try_recv().unwrap(), RemoteEvent::Fader { page: 1, index: 1, value: 64 });
+    }
+
+    #[test]
+    fn daslight_fader_cc_updates_state_and_emits() {
+        let mut h = handler();
+        let (tx, mut rx) = broadcast::channel(16);
+        h.set_event_sender(tx);
+
+        let sent = feedback(&mut h, cc_val(Channel::Ch2, 3, 77));
+
+        assert!(sent.is_empty());
+        assert_eq!(rx.try_recv().unwrap(), RemoteEvent::Fader { page: 2, index: 3, value: 77 });
+        assert_eq!(h.snapshot(Channel::Ch2).faders[3], Some(77));
+    }
+
+    #[test]
+    fn daslight_echo_right_after_send_is_ignored() {
+        let mut h = handler();
+        let (tx, mut rx) = broadcast::channel(16);
+        h.set_event_sender(tx);
+        remote_fader(&mut h, 3, 50, Channel::Ch1).unwrap();
+        let _ = rx.try_recv();
+
+        feedback(&mut h, cc_val(Channel::Ch1, 3, 70));
+
+        assert!(rx.try_recv().is_err());
+        assert_eq!(h.snapshot(Channel::Ch1).faders[3], Some(50));
+    }
+
+    #[test]
+    fn daslight_change_makes_akai_fader_need_pickup() {
+        let mut h = handler();
+        akai(&mut h, cc_val(Channel::Ch1, 7, 20)); // physical fader at 20
+        akai(&mut h, cc_val(Channel::Ch2, 16, 0)); // switch to Ch2
+        feedback(&mut h, cc_val(Channel::Ch2, 0, 100));
+
+        assert!(akai(&mut h, cc_val(Channel::Ch1, 7, 50)).is_empty());
+        assert!(!akai(&mut h, cc_val(Channel::Ch1, 7, 99)).is_empty());
     }
 
     #[test]

@@ -46,8 +46,6 @@ impl FaderState {
     }
 
     /// false = ignored by the echo guard.
-    // shortcut: unused until Task 10 wires Daslight feedback.
-    #[allow(dead_code)]
     pub fn software_set(&mut self, bank: usize, index: usize, value: u8, now: Instant) -> bool {
         if bank >= FADER_COUNT || index >= FADER_COUNT {
             return false;

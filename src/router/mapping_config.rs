@@ -67,6 +67,18 @@ impl MappingConfig {
 
         Ok(conn_control)
     }
+
+    /// Reverse of the fader `remap_control`: Daslight CC -> fader index 0..7, master CC 14 -> 8.
+    pub fn software_fader_index(&self, cc: u8) -> Option<usize> {
+        (0..8usize)
+            .find(|&i| {
+                Channel::from_index(i as u8)
+                    .ok()
+                    .and_then(|ch| self.remap_control(&ch, ControlFunction::from(U7::from_u8_lossy(7))).ok())
+                    .is_some_and(|c| u8::from(c) == cc)
+            })
+            .or((cc == 14).then_some(8))
+    }
 }
 
 #[cfg(test)]
@@ -92,6 +104,15 @@ mod tests {
 
     fn cc(n: u8) -> ControlFunction {
         ControlFunction::from(U7::from_u8_lossy(n))
+    }
+
+    #[test]
+    fn software_fader_index_reverses_control_map() {
+        let c = config();
+        assert_eq!(c.software_fader_index(9), Some(6));
+        assert_eq!(c.software_fader_index(0), Some(0));
+        assert_eq!(c.software_fader_index(14), Some(8));
+        assert_eq!(c.software_fader_index(20), None);
     }
 
     #[test]
