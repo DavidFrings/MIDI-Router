@@ -17,6 +17,9 @@ pub struct FaderState {
 impl FaderState {
     /// true = accept and send.
     pub fn controller_move(&mut self, bank: usize, index: usize, value: u8, now: Instant) -> bool {
+        if bank >= FADER_COUNT || index >= FADER_COUNT {
+            return false; // banks 10-16 have no fader state
+        }
         let prev = self.physical[index];
         self.physical[index] = Some(value);
         let accept = match self.values[bank][index] {
@@ -35,6 +38,9 @@ impl FaderState {
     }
 
     pub fn remote_set(&mut self, bank: usize, index: usize, value: u8, now: Instant) {
+        if bank >= FADER_COUNT || index >= FADER_COUNT {
+            return;
+        }
         self.values[bank][index] = Some(value);
         self.last_sent[bank][index] = Some(now);
     }
@@ -43,6 +49,9 @@ impl FaderState {
     // shortcut: unused until Task 10 wires Daslight feedback.
     #[allow(dead_code)]
     pub fn software_set(&mut self, bank: usize, index: usize, value: u8, now: Instant) -> bool {
+        if bank >= FADER_COUNT || index >= FADER_COUNT {
+            return false;
+        }
         if self.last_sent[bank][index].is_some_and(|t| now.saturating_duration_since(t) < ECHO_GUARD) {
             return false;
         }
@@ -51,7 +60,7 @@ impl FaderState {
     }
 
     pub fn value(&self, bank: usize, index: usize) -> Option<u8> {
-        self.values[bank][index]
+        *self.values.get(bank)?.get(index)?
     }
 }
 
@@ -129,6 +138,18 @@ mod tests {
         s.remote_set(0, 0, 50, t);
         assert!(s.software_set(0, 0, 70, t + Duration::from_millis(250)));
         assert_eq!(s.value(0, 0), Some(70));
+    }
+
+    #[test]
+    fn out_of_range_bank_does_not_panic() {
+        let mut s = FaderState::default();
+        let t = Instant::now();
+        assert!(!s.controller_move(9, 0, 1, t));
+        assert!(!s.controller_move(0, 9, 1, t));
+        s.remote_set(15, 0, 1, t);
+        assert!(!s.software_set(9, 0, 1, t));
+        assert_eq!(s.value(9, 0), None);
+        assert_eq!(s.value(0, 9), None);
     }
 
     #[test]

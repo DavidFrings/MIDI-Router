@@ -639,6 +639,15 @@ mod tests {
     }
 
     #[test]
+    fn out_of_range_bank_does_not_panic() {
+        let mut h = handler();
+        akai(&mut h, cc_val(Channel::Ch10, 16, 0));
+        assert!(akai(&mut h, cc_val(Channel::Ch1, 7, 50)).is_empty());
+        assert!(remote_fader(&mut h, 0, 50, Channel::Ch12).is_ok());
+        assert_eq!(h.snapshot(Channel::Ch12).faders, [None; 9]);
+    }
+
+    #[test]
     fn non_fader_cc_passes_unchanged() {
         let mut h = handler();
         assert_eq!(akai(&mut h, cc_val(Channel::Ch1, 16, 0)), vec![vec![0xB0, 16, 0]]);
