@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use log::{Log, Metadata, Record, debug, info};
+use log::{Log, Metadata, Record, debug, info, warn};
 use reqwest::Client;
 use serde_json::Value;
 use std::{
@@ -125,6 +125,38 @@ fn is_newer_version(latest: &str, current: &str) -> bool {
     latest_parts.len() > current_parts.len()
 }
 
+pub fn web_url(host: &str, port: u16) -> String {
+    if port == 80 {
+        format!("http://{host}/")
+    } else {
+        format!("http://{host}:{port}/")
+    }
+}
+
+/// For 0.0.0.0 the LAN address is found via a UDP socket "connected" to 8.8.8.8 (no packet sent).
+pub fn lan_host(bind_address: &str) -> Option<String> {
+    if bind_address != "0.0.0.0" {
+        return Some(bind_address.to_string());
+    }
+    let sock = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
+    sock.connect("8.8.8.8:80").ok()?;
+    Some(sock.local_addr().ok()?.ip().to_string())
+}
+
+pub fn open_in_browser(url: &str) {
+    let mut cmd = if cfg!(windows) {
+        let mut c = std::process::Command::new("cmd");
+        c.args(["/c", "start", ""]);
+        c
+    } else {
+        std::process::Command::new("xdg-open")
+    };
+    // Spawn without waiting so the TUI never blocks.
+    if let Err(e) = cmd.arg(url).spawn() {
+        warn!("Could not open browser: {e}");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -154,5 +186,20 @@ mod tests {
     fn release_without_installer_gives_none() {
         assert_eq!(installer_url(&json!({ "assets": [] })), None);
         assert_eq!(installer_url(&json!({ "message": "API rate limit exceeded" })), None);
+    }
+
+    #[test]
+    fn web_url_omits_port_80() {
+        assert_eq!(web_url("192.168.1.5", 80), "http://192.168.1.5/");
+    }
+
+    #[test]
+    fn web_url_keeps_other_port() {
+        assert_eq!(web_url("localhost", 8080), "http://localhost:8080/");
+    }
+
+    #[test]
+    fn lan_host_keeps_explicit_bind() {
+        assert_eq!(lan_host("127.0.0.1"), Some("127.0.0.1".to_string()));
     }
 }
