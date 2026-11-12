@@ -57,8 +57,6 @@ impl MidiHandler {
     }
 
     /// Tablet input for an explicit page; never changes the Akai's current bank.
-    // shortcut: called only by tests until the API (Task 5) forwards tablet input.
-    #[allow(dead_code)]
     pub fn handle_remote_input(
         &mut self,
         input: RemoteInput,
@@ -87,8 +85,6 @@ impl MidiHandler {
     }
 
     /// Full page state for a (re)connecting tablet.
-    // shortcut: called only by tests until the API (Task 5) serves it.
-    #[allow(dead_code)]
     pub fn snapshot(&mut self, bank: Channel) -> PageState {
         let pads = GRID_NOTES
             .iter()

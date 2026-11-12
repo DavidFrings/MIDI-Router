@@ -1,9 +1,8 @@
 use crate::{
-    api::test::test,
+    api::server::start_server,
     router::{mapping_config::MappingConfig, midi_connection::MidiRouter, remote::RemoteHub},
     utils::{config::ApiConfig, tui::App},
 };
-use actix_web::HttpServer;
 use anyhow::Result;
 use log::{debug, error, info};
 use std::{
@@ -52,7 +51,7 @@ pub(crate) fn tui_thread(
     Ok(())
 }
 
-pub(crate) fn api_thread(exit: Arc<AtomicBool>, config: ApiConfig) {
+pub(crate) fn api_thread(exit: Arc<AtomicBool>, config: ApiConfig, hub: Arc<RemoteHub>) {
     thread::spawn(move || {
         let runtime = Runtime::new().unwrap();
         runtime.block_on(async {
@@ -61,18 +60,14 @@ pub(crate) fn api_thread(exit: Arc<AtomicBool>, config: ApiConfig) {
                 config.bind_address, config.port
             );
 
-            let server = HttpServer::new(|| {
-                actix_web::App::new()
-                    .wrap(actix_web::middleware::Logger::default().exclude("/health"))
-                    .service(test)
-            })
-            .bind((config.bind_address.clone(), config.port))
-            .expect(&format!(
-                "Failed to bind api to {}:{}",
-                config.bind_address, config.port
-            ))
-            .disable_signals()
-            .run();
+            let addr = format!("{}:{}", config.bind_address, config.port);
+            let server = match start_server(config, hub).await {
+                Ok(server) => server,
+                Err(err) => {
+                    error!(target: "api", "Failed to start api on {}: {:#}", addr, err);
+                    return;
+                }
+            };
 
             let handle = server.handle();
 

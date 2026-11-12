@@ -19,8 +19,6 @@ pub enum RemoteEvent {
     Resync,
 }
 
-// shortcut: only built by tests until the API (Task 5) sends tablet input.
-#[allow(dead_code)]
 pub enum RemoteInput {
     Press { note: u8, pressed: bool },
     Fader { index: usize, value: u8 },
@@ -46,8 +44,6 @@ pub const GRID_NOTES: [u8; 45] = [
     26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 82, 83, 84, 85, 86,
 ];
 
-// shortcut: fields read only by tests until the API (Task 5) uses them.
-#[allow(dead_code)]
 #[derive(Clone)]
 pub struct RouterHandles {
     pub handler: Arc<Mutex<MidiHandler>>,
@@ -78,8 +74,6 @@ impl RemoteHub {
         *self.router.lock().unwrap() = None;
     }
 
-    // shortcut: used only by tests until the API (Task 5) reads it.
-    #[allow(dead_code)]
     pub fn handles(&self) -> Option<RouterHandles> {
         self.router.lock().unwrap().clone()
     }

@@ -1,6 +1,3 @@
-// shortcut: used by the API in Task 5
-#![allow(dead_code)]
-
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::Mutex;

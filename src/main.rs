@@ -2,6 +2,7 @@ mod api;
 mod router;
 mod utils;
 
+use crate::api::auth::valid_pin;
 use crate::router::remote::RemoteHub;
 use crate::utils::{
     config::Config,
@@ -49,6 +50,7 @@ async fn check_update(config: &Config) -> Result<()> {
 fn init_threads(config: &Config, logs: (Receiver<String>, Receiver<String>)) -> Result<()> {
     let restart = Arc::new(AtomicBool::new(false));
     let exit = Arc::new(AtomicBool::new(false));
+    let hub = RemoteHub::new();
 
     router_thread(
         restart.clone(),
@@ -56,9 +58,13 @@ fn init_threads(config: &Config, logs: (Receiver<String>, Receiver<String>)) -> 
         config.maps.clone(),
         config.router.controller_name.clone(),
         config.router.software_name.clone(),
-        RemoteHub::new(),
+        hub.clone(),
     );
-    api_thread(exit.clone(), config.api.clone());
+    if config.api.enabled && valid_pin(&config.api.pin) {
+        api_thread(exit.clone(), config.api.clone(), hub);
+    } else {
+        warn!(target: "api", "Web remote off: set pin in config.toml (digits only, at least 4)");
+    }
     tui_thread(
         restart.clone(),
         exit.clone(),
