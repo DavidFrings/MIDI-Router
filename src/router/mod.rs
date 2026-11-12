@@ -1,3 +1,4 @@
+pub mod fader_state;
 mod input_connection;
 mod led_controller;
 pub(crate) mod mapping_config;
