@@ -641,7 +641,9 @@ mod tests {
     #[test]
     fn out_of_range_bank_does_not_panic() {
         let mut h = handler();
-        akai(&mut h, cc_val(Channel::Ch10, 16, 0));
+        // LED refresh for bank 10 may return Err (not a panic); the bank is still switched.
+        let (mut c, mut sw) = (OutputConnection::new(), OutputConnection::new());
+        let _ = h.handle_controller_msg(cc_val(Channel::Ch10, 16, 0), &mut c, &mut sw);
         assert!(akai(&mut h, cc_val(Channel::Ch1, 7, 50)).is_empty());
         assert!(remote_fader(&mut h, 0, 50, Channel::Ch12).is_ok());
         assert_eq!(h.snapshot(Channel::Ch12).faders, [None; 9]);
