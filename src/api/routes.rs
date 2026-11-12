@@ -55,7 +55,8 @@ pub fn configure(
             .service(health)
             .service(page_state)
             .service(press)
-            .service(fader);
+            .service(fader)
+            .service(crate::api::ws::ws);
         // Files matches every path, so it goes last.
         match web_root {
             Some(root) => cfg.service(Files::new("/", root).index_file("index.html")),
