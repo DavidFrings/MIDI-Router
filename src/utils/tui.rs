@@ -1,6 +1,6 @@
+use crate::utils::helper::open_in_browser;
 use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
-use crate::utils::helper::open_in_browser;
 use log::info;
 use ratatui::{
     DefaultTerminal, Frame,
@@ -30,7 +30,7 @@ pub struct App {
     logs_api: Vec<String>,
     log_rx_router: Receiver<String>,
     log_rx_api: Receiver<String>,
-    web_url: Option<String>,
+    web_line: String,
     local_url: Option<String>,
 }
 
@@ -42,7 +42,7 @@ impl App {
         restart: Arc<AtomicBool>,
         log_rx_router: Receiver<String>,
         log_rx_api: Receiver<String>,
-        web_url: Option<String>,
+        web_line: String,
         local_url: Option<String>,
     ) -> Self {
         Self {
@@ -54,7 +54,7 @@ impl App {
             logs_api: Vec::new(),
             log_rx_router,
             log_rx_api,
-            web_url,
+            web_line,
             local_url,
         }
     }
@@ -198,9 +198,10 @@ impl Widget for &App {
             ]),
             Line::from(vec![
                 "Web remote:    ".into(),
-                match &self.web_url {
-                    Some(u) => u.clone().green().bold(),
-                    None => "off".dark_gray().bold(),
+                if self.web_line == "off" {
+                    "off".dark_gray().bold()
+                } else {
+                    self.web_line.clone().green().bold()
                 },
             ]),
         ])

@@ -6,7 +6,7 @@ use crate::api::auth::valid_pin;
 use crate::router::remote::RemoteHub;
 use crate::utils::{
     config::Config,
-    helper::{ForwardLogger, lan_host, update, web_url},
+    helper::{ForwardLogger, lan_host, update, web_remote_line, web_url},
     threads::{api_thread, router_thread, tui_thread},
 };
 use anyhow::Result;
@@ -63,13 +63,14 @@ fn init_threads(config: &Config, logs: (Receiver<String>, Receiver<String>)) -> 
     let (web, local) = if config.api.enabled && valid_pin(&config.api.pin) {
         api_thread(exit.clone(), config.api.clone(), hub);
         let port = config.api.port;
+        let lan = lan_host(&config.api.bind_address).map(|h| web_url(&h, port));
         (
-            lan_host(&config.api.bind_address).map(|h| web_url(&h, port)),
+            web_remote_line(true, lan.as_deref(), port),
             Some(web_url("localhost", port)),
         )
     } else {
         warn!(target: "api", "Web remote off: set pin in config.toml (digits only, at least 4)");
-        (None, None)
+        (web_remote_line(false, None, 0), None)
     };
     tui_thread(
         restart.clone(),

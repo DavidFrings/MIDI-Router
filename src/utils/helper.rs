@@ -133,14 +133,34 @@ pub fn web_url(host: &str, port: u16) -> String {
     }
 }
 
-/// For 0.0.0.0 the LAN address is found via a UDP socket "connected" to 8.8.8.8 (no packet sent).
+/// For 0.0.0.0 the LAN address is found via UDP sockets "connected" to a few targets (no packet sent).
+/// The later targets are private ranges, so they work without an uplink as long as some interface has a route.
 pub fn lan_host(bind_address: &str) -> Option<String> {
     if bind_address != "0.0.0.0" {
         return Some(bind_address.to_string());
     }
-    let sock = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
-    sock.connect("8.8.8.8:80").ok()?;
-    Some(sock.local_addr().ok()?.ip().to_string())
+    [
+        "8.8.8.8:80",
+        "10.255.255.255:1",
+        "192.168.255.255:1",
+        "172.31.255.255:1",
+    ]
+    .iter()
+    .find_map(|target| {
+        let sock = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
+        sock.connect(target).ok()?;
+        let ip = sock.local_addr().ok()?.ip();
+        (!ip.is_loopback() && !ip.is_unspecified()).then(|| ip.to_string())
+    })
+}
+
+/// Text after "Web remote: " in the TUI; "off" only when the API is not started.
+pub fn web_remote_line(api_on: bool, lan_url: Option<&str>, port: u16) -> String {
+    match (api_on, lan_url) {
+        (false, _) => "off".to_string(),
+        (true, Some(u)) => u.to_string(),
+        (true, None) => format!("on, port {port} (LAN IP unknown)"),
+    }
 }
 
 pub fn open_in_browser(url: &str) {
@@ -152,7 +172,11 @@ pub fn open_in_browser(url: &str) {
         std::process::Command::new("xdg-open")
     };
     // Spawn without waiting so the TUI never blocks.
-    if let Err(e) = cmd.arg(url).spawn() {
+    cmd.arg(url)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    if let Err(e) = cmd.spawn() {
         warn!("Could not open browser: {e}");
     }
 }
@@ -185,7 +209,10 @@ mod tests {
     #[test]
     fn release_without_installer_gives_none() {
         assert_eq!(installer_url(&json!({ "assets": [] })), None);
-        assert_eq!(installer_url(&json!({ "message": "API rate limit exceeded" })), None);
+        assert_eq!(
+            installer_url(&json!({ "message": "API rate limit exceeded" })),
+            None
+        );
     }
 
     #[test]
@@ -201,5 +228,18 @@ mod tests {
     #[test]
     fn lan_host_keeps_explicit_bind() {
         assert_eq!(lan_host("127.0.0.1"), Some("127.0.0.1".to_string()));
+    }
+
+    #[test]
+    fn web_remote_line_distinguishes_off_and_unknown_ip() {
+        assert_eq!(web_remote_line(false, None, 8080), "off");
+        assert_eq!(
+            web_remote_line(true, Some("http://1.2.3.4:8080/"), 8080),
+            "http://1.2.3.4:8080/"
+        );
+        assert_eq!(
+            web_remote_line(true, None, 8080),
+            "on, port 8080 (LAN IP unknown)"
+        );
     }
 }

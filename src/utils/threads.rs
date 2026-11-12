@@ -23,7 +23,7 @@ pub(crate) fn tui_thread(
     log_api: Receiver<String>,
     controller: String,
     software: String,
-    web_url: Option<String>,
+    web_line: String,
     local_url: Option<String>,
 ) -> Result<()> {
     let mut app = App::new(
@@ -33,7 +33,7 @@ pub(crate) fn tui_thread(
         restart,
         log_router,
         log_api,
-        web_url,
+        web_line,
         local_url,
     );
 
