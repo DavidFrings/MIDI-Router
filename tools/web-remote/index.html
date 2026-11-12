@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#111111">
+  <title>MIDI Router Remote</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="offline">
+  <header id="bar">
+    <span class="dim">Page</span>
+    <nav id="pages"></nav>
+  </header>
+  <div id="banner">Connecting…</div>
+  <main id="grid"></main>
+  <section id="faders"></section>
+  <div id="pin-overlay" hidden>
+    <form id="pin-form">
+      <label for="pin-input">PIN</label>
+      <input id="pin-input" type="password" inputmode="numeric" autocomplete="off" autocapitalize="off">
+      <div id="pin-msg"></div>
+      <button type="submit">Connect</button>
+    </form>
+  </div>
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
