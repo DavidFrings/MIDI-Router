@@ -1,6 +1,6 @@
 use crate::{
     api::test::test,
-    router::{mapping_config::MappingConfig, midi_connection::MidiRouter},
+    router::{mapping_config::MappingConfig, midi_connection::MidiRouter, remote::RemoteHub},
     utils::{config::ApiConfig, tui::App},
 };
 use actix_web::HttpServer;
@@ -98,10 +98,11 @@ pub(crate) fn router_thread(
     config: MappingConfig,
     controller: String,
     software: String,
+    hub: Arc<RemoteHub>,
 ) {
     thread::spawn(move || {
         while should_continue(&exit) {
-            router_iteration(&restart, &exit, &config, &controller, &software);
+            router_iteration(&restart, &exit, &config, &controller, &software, &hub);
 
             if should_restart(&restart, &exit) {
                 restart.store(false, Ordering::SeqCst);
@@ -126,16 +127,22 @@ fn router_iteration(
     config: &MappingConfig,
     controller: &str,
     software: &str,
+    hub: &RemoteHub,
 ) {
     debug!("Starting MIDIRouter...");
-    let mut router = MidiRouter::new(config.clone());
+    let mut router = MidiRouter::new(config.clone(), hub.events.clone());
 
     match MidiRouter::connect(&mut router, controller, software) {
-        Ok(_) => info!("Started MIDIRouter..."),
+        Ok(_) => {
+            hub.attach(router.handles());
+            info!("Started MIDIRouter...")
+        }
         Err(err) => error!("MIDIRouter failed: {}", err),
     }
 
     while !restart.load(Ordering::SeqCst) && !exit.load(Ordering::SeqCst) {
         thread::sleep(Duration::from_millis(200));
     }
+
+    hub.detach();
 }

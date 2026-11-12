@@ -2,6 +2,7 @@ mod api;
 mod router;
 mod utils;
 
+use crate::router::remote::RemoteHub;
 use crate::utils::{
     config::Config,
     helper::{ForwardLogger, update},
@@ -55,6 +56,7 @@ fn init_threads(config: &Config, logs: (Receiver<String>, Receiver<String>)) -> 
         config.maps.clone(),
         config.router.controller_name.clone(),
         config.router.software_name.clone(),
+        RemoteHub::new(),
     );
     api_thread(exit.clone(), config.api.clone());
     tui_thread(

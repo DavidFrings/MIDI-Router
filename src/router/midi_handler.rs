@@ -1,9 +1,12 @@
 use crate::router::{
+    fader_state::FADER_COUNT,
+    remote::{GRID_NOTES, PadState, PageState, RemoteEvent, RemoteInput},
     led_controller::LedController, mapping_config::MappingConfig,
     output_connection::OutputConnection, state_manager::StateManager,
 };
 use anyhow::Result;
 use log::{debug, trace, warn};
+use tokio::sync::broadcast;
 use wmidi::{
     Channel, MidiMessage,
     MidiMessage::{ControlChange, NoteOff, NoteOn},
@@ -17,6 +20,7 @@ pub struct MidiHandler {
     state_manager: StateManager,
     mapping_config: MappingConfig,
     led_controller: LedController,
+    events: Option<broadcast::Sender<RemoteEvent>>,
 }
 
 impl MidiHandler {
@@ -25,7 +29,12 @@ impl MidiHandler {
             state_manager: StateManager::new(),
             mapping_config: config,
             led_controller: LedController::new(),
+            events: None,
         }
+    }
+
+    pub fn set_event_sender(&mut self, tx: broadcast::Sender<RemoteEvent>) {
+        self.events = Some(tx);
     }
 
     pub fn handle_controller_msg(
@@ -37,9 +46,56 @@ impl MidiHandler {
         trace!("Received MIDI message from Controller: {:?}", msg);
 
         self.handle_site_change(&msg, to_controller_connection)?; // Check if user wants to change site
-        self.process_controller_message(msg, to_controller_connection, to_software_connection)?;
+        let bank = *self.state_manager.get_current_bank();
+        self.process_controller_message(msg, bank, to_controller_connection, to_software_connection)?;
 
         Ok(())
+    }
+
+    /// Tablet input for an explicit page; never changes the Akai's current bank.
+    // shortcut: called only by tests until the API (Task 5) forwards tablet input.
+    #[allow(dead_code)]
+    pub fn handle_remote_input(
+        &mut self,
+        input: RemoteInput,
+        bank: Channel,
+        to_controller_connection: &mut OutputConnection,
+        to_software_connection: &mut OutputConnection,
+    ) -> Result<()> {
+        let msg = match input {
+            RemoteInput::Press { note, pressed: true } => {
+                NoteOn(Channel::Ch1, Note::from_u8_lossy(note), Velocity::MAX)
+            }
+            RemoteInput::Press { note, pressed: false } => {
+                NoteOff(Channel::Ch1, Note::from_u8_lossy(note), Velocity::MIN)
+            }
+            RemoteInput::Fader { .. } => return Ok(()), // Task 3 wires faders
+        };
+
+        self.process_controller_message(msg, bank, to_controller_connection, to_software_connection)
+    }
+
+    /// Full page state for a (re)connecting tablet.
+    // shortcut: called only by tests until the API (Task 5) serves it.
+    #[allow(dead_code)]
+    pub fn snapshot(&mut self, bank: Channel) -> PageState {
+        let pads = GRID_NOTES
+            .iter()
+            .map(|&note| {
+                let (on, color) = self
+                    .state_manager
+                    .get_note_state_and_color(&bank, Note::from_u8_lossy(note))
+                    .map(|(on, color)| (*on, *color))
+                    .unwrap_or((false, 0));
+                PadState { note, on, color: (color != 0).then_some(color) }
+            })
+            .collect();
+
+        PageState {
+            page: bank.index() + 1,
+            pads,
+            faders: [None; FADER_COUNT], // Task 3 fills these from FaderState
+        }
     }
 
     pub fn handle_software_msg(
@@ -84,10 +140,11 @@ impl MidiHandler {
     fn process_controller_message(
         &mut self,
         midi_message: MidiMessage,
+        bank: Channel,
         to_controller_connection: &mut OutputConnection,
         to_software_connection: &mut OutputConnection,
     ) -> Result<()> {
-        let current_bank = &self.state_manager.get_current_bank().clone();
+        let current_bank = &bank;
         match midi_message {
             NoteOn(channel, note, velocity) => {
                 let remapped_note = self.mapping_config.remap_note(&channel, note)?;
@@ -126,9 +183,9 @@ impl MidiHandler {
                         NoteOff(*current_bank, remapped_note, velocity),
                     )?;
                 } else if self.mapping_config.is_toggle_note(remapped_note) {
-                    self.led_controller.refresh_single_led(
+                    // The Akai darkens the pad on release; restore it.
+                    self.refresh_led_if_visible(
                         to_controller_connection,
-                        &mut self.state_manager,
                         current_bank,
                         remapped_note,
                     )?;
@@ -175,7 +232,7 @@ impl MidiHandler {
                             .set_note_color(&channel, note, velocity)?;
                     }
 
-                    self.refresh_led_if_visible(to_controller_connection, &channel, note)?;
+                    self.pad_changed(to_controller_connection, &channel, note)?;
                 } else {
                     warn!(
                         "Toggle notes doesn't include note (Software On): {}",
@@ -188,7 +245,7 @@ impl MidiHandler {
                 if self.mapping_config.is_toggle_note(note) {
                     self.state_manager.set_note_state(&channel, note, false)?;
 
-                    self.refresh_led_if_visible(to_controller_connection, &channel, note)?;
+                    self.pad_changed(to_controller_connection, &channel, note)?;
                 } else if !self.mapping_config.is_momentary_note(note) {
                     warn!(
                         "Toggle notes doesn't include note (Software Off): {}",
@@ -199,6 +256,29 @@ impl MidiHandler {
 
             ControlChange(_, _, _) => {}
             _ => {}
+        }
+
+        Ok(())
+    }
+
+    /// Pad state changed: update the Akai LED if visible and tell the tablets.
+    fn pad_changed(
+        &mut self,
+        to_controller_connection: &mut OutputConnection,
+        bank: &Channel,
+        note: Note,
+    ) -> Result<()> {
+        self.refresh_led_if_visible(to_controller_connection, bank, note)?;
+
+        if let Some(events) = &self.events {
+            let (on, color) = self.state_manager.get_note_state_and_color(bank, note)?;
+            let event = RemoteEvent::Pad {
+                page: bank.index() + 1,
+                note: u8::from(note),
+                on: *on,
+                color: (*color != 0).then_some(*color),
+            };
+            let _ = events.send(event); // no subscribers is normal
         }
 
         Ok(())
@@ -235,14 +315,7 @@ impl MidiHandler {
         let message = NoteOn(*bank, note, velocity);
         to_software_connection.send(message)?;
 
-        self.led_controller.refresh_single_led(
-            to_controller_connection,
-            &mut self.state_manager,
-            bank,
-            note,
-        )?;
-
-        Ok(())
+        self.pad_changed(to_controller_connection, bank, note)
     }
 
     /// Forwards press/release as-is; LED is on only while held.
@@ -262,14 +335,7 @@ impl MidiHandler {
         self.state_manager.set_note_state(bank, note, pressed)?;
         to_software_connection.send(message)?;
 
-        self.led_controller.refresh_single_led(
-            to_controller_connection,
-            &mut self.state_manager,
-            bank,
-            note,
-        )?;
-
-        Ok(())
+        self.pad_changed(to_controller_connection, bank, note)
     }
 
 
@@ -278,10 +344,11 @@ impl MidiHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::sync::broadcast;
 
     fn handler() -> MidiHandler {
         let config: MappingConfig = toml::from_str(
-            "toggle_notes = [0]\nmomentary_notes = [82]\nnote_map = []\ncontrol_map = []",
+            "toggle_notes = [0, 5]\nmomentary_notes = [82]\nnote_map = []\ncontrol_map = []",
         )
         .unwrap();
         MidiHandler::new(config)
@@ -420,5 +487,93 @@ mod tests {
         feedback(&mut h, NoteOn(Channel::Ch1, Note::from_u8_lossy(82), color));
 
         assert_eq!(color_in(&mut h, Channel::Ch1, 82), 5);
+    }
+
+    fn remote_press(
+        handler: &mut MidiHandler,
+        note: u8,
+        bank: Channel,
+    ) -> (Vec<Vec<u8>>, Vec<Vec<u8>>) {
+        let (mut to_ctrl, mut to_sw) = (OutputConnection::new(), OutputConnection::new());
+        handler
+            .handle_remote_input(RemoteInput::Press { note, pressed: true }, bank, &mut to_ctrl, &mut to_sw)
+            .unwrap();
+        handler
+            .handle_remote_input(RemoteInput::Press { note, pressed: false }, bank, &mut to_ctrl, &mut to_sw)
+            .unwrap();
+        (to_ctrl.sent, to_sw.sent)
+    }
+
+    #[test]
+    fn remote_press_on_other_bank_sends_on_that_channel_and_leaves_akai_leds() {
+        let mut h = handler(); // Akai on Ch1
+
+        let (ctrl, sw) = remote_press(&mut h, 5, Channel::Ch3);
+
+        assert_eq!(sw, vec![vec![0x92, 5, 127]]); // NoteOn(Ch3, 5, 127)
+        assert!(ctrl.is_empty());
+        assert_eq!(*h.state_manager.get_current_bank(), Channel::Ch1);
+        assert!(is_on_in(&mut h, Channel::Ch3, 5));
+    }
+
+    #[test]
+    fn remote_press_on_visible_bank_matches_akai_press() {
+        let mut akai = handler();
+        let (mut akai_ctrl, mut akai_sw) = (OutputConnection::new(), OutputConnection::new());
+        let note = Note::from_u8_lossy(5);
+        akai.handle_controller_msg(NoteOn(Channel::Ch1, note, Velocity::MAX), &mut akai_ctrl, &mut akai_sw)
+            .unwrap();
+        akai.handle_controller_msg(NoteOff(Channel::Ch1, note, Velocity::MIN), &mut akai_ctrl, &mut akai_sw)
+            .unwrap();
+
+        let mut remote = handler();
+        let (ctrl, sw) = remote_press(&mut remote, 5, Channel::Ch1);
+
+        assert_eq!(sw, akai_sw.sent);
+        assert_eq!(ctrl, akai_ctrl.sent);
+        assert!(!ctrl.is_empty());
+    }
+
+    #[test]
+    fn pad_change_emits_event() {
+        let mut h = handler();
+        let (tx, mut rx) = broadcast::channel(16);
+        h.set_event_sender(tx);
+
+        remote_press(&mut h, 5, Channel::Ch3);
+
+        assert_eq!(
+            rx.try_recv().unwrap(),
+            RemoteEvent::Pad { page: 3, note: 5, on: true, color: None }
+        );
+    }
+
+    #[test]
+    fn software_feedback_emits_pad_event_with_colour() {
+        let mut h = handler();
+        let (tx, mut rx) = broadcast::channel(16);
+        h.set_event_sender(tx);
+
+        feedback(&mut h, NoteOn(Channel::Ch2, Note::from_u8_lossy(5), Velocity::from_u8_lossy(21)));
+
+        assert_eq!(
+            rx.try_recv().unwrap(),
+            RemoteEvent::Pad { page: 2, note: 5, on: false, color: Some(21) }
+        );
+    }
+
+    #[test]
+    fn snapshot_has_45_pads_and_9_faders() {
+        let mut h = handler();
+        feedback(&mut h, NoteOn(Channel::Ch2, Note::from_u8_lossy(5), Velocity::from_u8_lossy(21)));
+
+        let page = h.snapshot(Channel::Ch2);
+
+        assert_eq!(page.page, 2);
+        assert_eq!(page.pads.len(), 45);
+        assert_eq!(page.faders.len(), 9);
+        assert_eq!(page.pads[0].color, None);
+        assert_eq!((page.pads[5].note, page.pads[5].color), (5, Some(21)));
+        assert_eq!(page.pads[44].note, 86);
     }
 }

@@ -5,4 +5,5 @@ pub(crate) mod mapping_config;
 pub(crate) mod midi_connection;
 mod midi_handler;
 mod output_connection;
+pub(crate) mod remote;
 mod state_manager;
