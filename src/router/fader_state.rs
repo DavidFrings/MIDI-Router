@@ -1,5 +1,3 @@
-// shortcut: unused until the web remote wires it in; drop this allow then.
-#![allow(dead_code)]
 use std::time::{Duration, Instant};
 use wmidi::Channel;
 
@@ -42,6 +40,8 @@ impl FaderState {
     }
 
     /// false = ignored by the echo guard.
+    // shortcut: unused until Task 10 wires Daslight feedback.
+    #[allow(dead_code)]
     pub fn software_set(&mut self, bank: usize, index: usize, value: u8, now: Instant) -> bool {
         if self.last_sent[bank][index].is_some_and(|t| now.saturating_duration_since(t) < ECHO_GUARD) {
             return false;

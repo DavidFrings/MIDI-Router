@@ -15,8 +15,6 @@ pub enum RemoteEvent {
         on: bool,
         color: Option<u8>,
     },
-    // shortcut: built by Task 3 (fader sync), allowed dead until then.
-    #[allow(dead_code)]
     Fader { page: u8, index: usize, value: u8 },
     Resync,
 }

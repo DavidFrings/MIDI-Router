@@ -1,14 +1,16 @@
 use crate::router::{
-    fader_state::FADER_COUNT,
+    fader_state::{FaderState, controller_fader_index},
     remote::{GRID_NOTES, PadState, PageState, RemoteEvent, RemoteInput},
     led_controller::LedController, mapping_config::MappingConfig,
     output_connection::OutputConnection, state_manager::StateManager,
 };
 use anyhow::Result;
+use anyhow::bail;
 use log::{debug, trace, warn};
+use std::time::Instant;
 use tokio::sync::broadcast;
 use wmidi::{
-    Channel, MidiMessage,
+    Channel, ControlFunction, MidiMessage, U7,
     MidiMessage::{ControlChange, NoteOff, NoteOn},
     Note, Velocity,
 };
@@ -20,6 +22,7 @@ pub struct MidiHandler {
     state_manager: StateManager,
     mapping_config: MappingConfig,
     led_controller: LedController,
+    fader_state: FaderState,
     events: Option<broadcast::Sender<RemoteEvent>>,
 }
 
@@ -29,6 +32,7 @@ impl MidiHandler {
             state_manager: StateManager::new(),
             mapping_config: config,
             led_controller: LedController::new(),
+            fader_state: FaderState::default(),
             events: None,
         }
     }
@@ -47,7 +51,7 @@ impl MidiHandler {
 
         self.handle_site_change(&msg, to_controller_connection)?; // Check if user wants to change site
         let bank = *self.state_manager.get_current_bank();
-        self.process_controller_message(msg, bank, to_controller_connection, to_software_connection)?;
+        self.process_controller_message(msg, bank, false, to_controller_connection, to_software_connection)?;
 
         Ok(())
     }
@@ -69,10 +73,17 @@ impl MidiHandler {
             RemoteInput::Press { note, pressed: false } => {
                 NoteOff(Channel::Ch1, Note::from_u8_lossy(note), Velocity::MIN)
             }
-            RemoteInput::Fader { .. } => return Ok(()), // Task 3 wires faders
+            RemoteInput::Fader { index, value } => {
+                let value = U7::try_from(value)?;
+                match index {
+                    0..=7 => ControlChange(Channel::from_index(index as u8)?, ControlFunction::from(U7::from_u8_lossy(7)), value),
+                    8 => ControlChange(Channel::Ch1, ControlFunction::from(U7::from_u8_lossy(14)), value),
+                    _ => bail!("fader index out of range: {index}"),
+                }
+            }
         };
 
-        self.process_controller_message(msg, bank, to_controller_connection, to_software_connection)
+        self.process_controller_message(msg, bank, true, to_controller_connection, to_software_connection)
     }
 
     /// Full page state for a (re)connecting tablet.
@@ -94,7 +105,7 @@ impl MidiHandler {
         PageState {
             page: bank.index() + 1,
             pads,
-            faders: [None; FADER_COUNT], // Task 3 fills these from FaderState
+            faders: std::array::from_fn(|i| self.fader_state.value(bank.index() as usize, i)),
         }
     }
 
@@ -141,6 +152,7 @@ impl MidiHandler {
         &mut self,
         midi_message: MidiMessage,
         bank: Channel,
+        from_remote: bool,
         to_controller_connection: &mut OutputConnection,
         to_software_connection: &mut OutputConnection,
     ) -> Result<()> {
@@ -198,6 +210,17 @@ impl MidiHandler {
             }
 
             ControlChange(channel, control, velocity) => {
+                if let Some(index) = controller_fader_index(channel, u8::from(control)) {
+                    let (b, value) = (bank.index() as usize, u8::from(velocity));
+                    if from_remote {
+                        self.fader_state.remote_set(b, index, value, Instant::now());
+                    } else if !self.fader_state.controller_move(b, index, value, Instant::now()) {
+                        return Ok(()); // soft takeover: fader not picked up yet
+                    }
+                    if let Some(events) = &self.events {
+                        let _ = events.send(RemoteEvent::Fader { page: bank.index() + 1, index, value });
+                    }
+                }
                 let remapped_control = self.mapping_config.remap_control(&channel, control)?;
                 let message = ControlChange(*current_bank, remapped_control, velocity);
                 to_software_connection.send(message)?;
@@ -348,7 +371,7 @@ mod tests {
 
     fn handler() -> MidiHandler {
         let config: MappingConfig = toml::from_str(
-            "toggle_notes = [0, 5]\nmomentary_notes = [82]\nnote_map = []\ncontrol_map = []",
+            "toggle_notes = [0, 5]\nmomentary_notes = [82]\nnote_map = []\n\n[[control_map]]\nnote = 7\nnew_note = [0, 1, 2, 3, 4, 5, 9, 10]",
         )
         .unwrap();
         MidiHandler::new(config)
@@ -560,6 +583,65 @@ mod tests {
             rx.try_recv().unwrap(),
             RemoteEvent::Pad { page: 2, note: 5, on: false, color: Some(21) }
         );
+    }
+
+    fn cc_val(channel: Channel, control: u8, value: u8) -> MidiMessage<'static> {
+        ControlChange(channel, ControlFunction::from(U7::from_u8_lossy(control)), U7::from_u8_lossy(value))
+    }
+
+    fn akai(h: &mut MidiHandler, msg: MidiMessage<'static>) -> Vec<Vec<u8>> {
+        let (mut c, mut sw) = (OutputConnection::new(), OutputConnection::new());
+        h.handle_controller_msg(msg, &mut c, &mut sw).unwrap();
+        sw.sent
+    }
+
+    fn remote_fader(h: &mut MidiHandler, index: usize, value: u8, bank: Channel) -> Result<Vec<Vec<u8>>> {
+        let (mut c, mut sw) = (OutputConnection::new(), OutputConnection::new());
+        h.handle_remote_input(RemoteInput::Fader { index, value }, bank, &mut c, &mut sw)?;
+        Ok(sw.sent)
+    }
+
+    #[test]
+    fn akai_fader_is_remapped_and_emits_event() {
+        let mut h = handler();
+        let (tx, mut rx) = broadcast::channel(16);
+        h.set_event_sender(tx);
+
+        let sent = akai(&mut h, cc_val(Channel::Ch2, 7, 64));
+
+        assert_eq!(sent, vec![vec![0xB0, 1, 64]]);
+        assert_eq!(rx.try_recv().unwrap(), RemoteEvent::Fader { page: 1, index: 1, value: 64 });
+    }
+
+    #[test]
+    fn akai_fader_blocked_after_remote_move() {
+        let mut h = handler();
+        akai(&mut h, cc_val(Channel::Ch1, 7, 10));
+        remote_fader(&mut h, 0, 100, Channel::Ch1).unwrap();
+
+        assert!(akai(&mut h, cc_val(Channel::Ch1, 7, 20)).is_empty());
+    }
+
+    #[test]
+    fn remote_fader_sends_on_page_channel() {
+        let mut h = handler();
+
+        let sent = remote_fader(&mut h, 8, 90, Channel::Ch4).unwrap();
+
+        assert_eq!(sent, vec![vec![0xB3, 14, 90]]);
+        assert_eq!(h.snapshot(Channel::Ch4).faders[8], Some(90));
+    }
+
+    #[test]
+    fn remote_fader_rejects_index_9() {
+        let mut h = handler();
+        assert!(remote_fader(&mut h, 9, 10, Channel::Ch1).is_err());
+    }
+
+    #[test]
+    fn non_fader_cc_passes_unchanged() {
+        let mut h = handler();
+        assert_eq!(akai(&mut h, cc_val(Channel::Ch1, 16, 0)), vec![vec![0xB0, 16, 0]]);
     }
 
     #[test]
