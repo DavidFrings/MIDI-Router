@@ -4,7 +4,7 @@ authors = ["David Frings <dev@davidfrings.dev> (https://DavidFrings.dev)"]
 version = "0.2.7"
 description = "MIDI Router for APC40 MK2 to route banks"
 license = "MPL-2.0"
-rust-version = "1.87"
+rust-version = "1.89"
 edition = "2024"
 
 [dependencies]

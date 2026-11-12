@@ -101,18 +101,23 @@ function retryLater() {
   retryTimer = setTimeout(connect, RETRY_MS);
 }
 
-function connect() {
+let connectGen = 0;
+async function connect() {
   clearTimeout(retryTimer);
   closeWs();
   if (!pin) { setOnline(false); return showPin(''); }
+  const gen = ++connectGen;
+  // One authenticated probe BEFORE the WS: a wrong PIN counts once for the lockout (a rejected
+  // handshake is opaque and would count again) and the probe tells 401/429/503/offline apart.
+  try { await api.state(page); } catch (e) { if (gen === connectGen) handleError(e); return; }
+  if (gen !== connectGen) return;
   ws = api.openWs();
   ws.onopen = resync;
   ws.onmessage = (e) => onMessage(e.data);
-  // A rejected handshake (wrong PIN, lockout) looks like a plain close; the HTTP probe tells why.
   ws.onclose = () => {
     ws = null;
     setOnline(false);
-    api.state(page).then(retryLater, handleError);
+    retryLater(); // connect() re-probes
   };
 }
 
@@ -204,7 +209,7 @@ function releaseAll() {
 const sendFader = throttleLatest((i, { p, v }) => api.fader(p, i, v).catch(handleError));
 
 function wireFader(el, i) {
-  let drag = null; // { pointerId, y, v }
+  let drag = null; // { pointerId, y, v, page }
   el.addEventListener('pointerdown', (e) => {
     e.preventDefault();
     if (!online || drag) return;
@@ -212,16 +217,18 @@ function wireFader(el, i) {
     lock.touch(i);
     el.classList.add('held');
     // Relative drag: touching the fader never makes the value jump.
-    drag = { pointerId: e.pointerId, y: e.clientY, v: faderValues[i] ?? 0 };
+    drag = { pointerId: e.pointerId, y: e.clientY, v: faderValues[i] ?? 0, page };
   });
   el.addEventListener('pointermove', (e) => {
     if (!drag || e.pointerId !== drag.pointerId) return;
     const h = el.querySelector('.track').clientHeight || 1;
     const v = Math.max(0, Math.min(127, Math.round(drag.v + ((drag.y - e.clientY) / h) * 127)));
-    if (v === faderValues[i]) return;
-    faderValues[i] = v;
-    drawFader(i);
-    sendFader(i, { p: page, v });
+    if (drag.page === page) { // after a page switch the view shows another page: don't touch it
+      if (v === faderValues[i]) return;
+      faderValues[i] = v;
+      drawFader(i);
+    }
+    sendFader(i, { p: drag.page, v });
   });
   const end = (e) => {
     if (!drag || e.pointerId !== drag.pointerId) return;

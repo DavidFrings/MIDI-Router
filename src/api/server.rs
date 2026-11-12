@@ -37,7 +37,8 @@ pub async fn start_server(
 
     let server = HttpServer::new(move || {
         App::new()
-            .wrap(Logger::default().exclude("/health"))
+            // %U = path only: the /ws?pin= query must never reach the log
+            .wrap(Logger::new("%a \"%m %U\" %s %Dms").exclude("/health").exclude("/api/fader"))
             .configure(configure(state.clone(), root.clone()))
     })
     .bind((config.bind_address.as_str(), config.port))?
