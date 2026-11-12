@@ -5,7 +5,10 @@ controller_name = "APC40 mkII"
 [api]
 enabled = true
 bind_address = "0.0.0.0"
-port = 8080
+port = 80
+# Web remote PIN: digits only, at least 4. Empty = web remote off.
+# Must be quoted, e.g. pin = "4711" (an unquoted PIN with a leading zero is invalid TOML).
+pin = ""
 
 
 [maps]

@@ -1,9 +1,8 @@
 use crate::{
-    api::test::test,
-    router::{mapping_config::MappingConfig, midi_connection::MidiRouter},
+    api::server::start_server,
+    router::{mapping_config::MappingConfig, midi_connection::MidiRouter, remote::RemoteHub},
     utils::{config::ApiConfig, tui::App},
 };
-use actix_web::HttpServer;
 use anyhow::Result;
 use log::{debug, error, info};
 use std::{
@@ -24,6 +23,8 @@ pub(crate) fn tui_thread(
     log_api: Receiver<String>,
     controller: String,
     software: String,
+    web_line: String,
+    local_url: Option<String>,
 ) -> Result<()> {
     let mut app = App::new(
         controller,
@@ -32,6 +33,8 @@ pub(crate) fn tui_thread(
         restart,
         log_router,
         log_api,
+        web_line,
+        local_url,
     );
 
     let handle = thread::spawn(move || {
@@ -52,7 +55,7 @@ pub(crate) fn tui_thread(
     Ok(())
 }
 
-pub(crate) fn api_thread(exit: Arc<AtomicBool>, config: ApiConfig) {
+pub(crate) fn api_thread(exit: Arc<AtomicBool>, config: ApiConfig, hub: Arc<RemoteHub>) {
     thread::spawn(move || {
         let runtime = Runtime::new().unwrap();
         runtime.block_on(async {
@@ -61,18 +64,14 @@ pub(crate) fn api_thread(exit: Arc<AtomicBool>, config: ApiConfig) {
                 config.bind_address, config.port
             );
 
-            let server = HttpServer::new(|| {
-                actix_web::App::new()
-                    .wrap(actix_web::middleware::Logger::default().exclude("/health"))
-                    .service(test)
-            })
-            .bind((config.bind_address.clone(), config.port))
-            .expect(&format!(
-                "Failed to bind api to {}:{}",
-                config.bind_address, config.port
-            ))
-            .disable_signals()
-            .run();
+            let addr = format!("{}:{}", config.bind_address, config.port);
+            let server = match start_server(config, hub).await {
+                Ok(server) => server,
+                Err(err) => {
+                    error!(target: "api", "Failed to start api on {}: {:#}", addr, err);
+                    return;
+                }
+            };
 
             let handle = server.handle();
 
@@ -98,10 +97,11 @@ pub(crate) fn router_thread(
     config: MappingConfig,
     controller: String,
     software: String,
+    hub: Arc<RemoteHub>,
 ) {
     thread::spawn(move || {
         while should_continue(&exit) {
-            router_iteration(&restart, &exit, &config, &controller, &software);
+            router_iteration(&restart, &exit, &config, &controller, &software, &hub);
 
             if should_restart(&restart, &exit) {
                 restart.store(false, Ordering::SeqCst);
@@ -126,16 +126,22 @@ fn router_iteration(
     config: &MappingConfig,
     controller: &str,
     software: &str,
+    hub: &RemoteHub,
 ) {
     debug!("Starting MIDIRouter...");
-    let mut router = MidiRouter::new(config.clone());
+    let mut router = MidiRouter::new(config.clone(), hub.events.clone());
 
     match MidiRouter::connect(&mut router, controller, software) {
-        Ok(_) => info!("Started MIDIRouter..."),
+        Ok(_) => {
+            hub.attach(router.handles());
+            info!("Started MIDIRouter...")
+        }
         Err(err) => error!("MIDIRouter failed: {}", err),
     }
 
     while !restart.load(Ordering::SeqCst) && !exit.load(Ordering::SeqCst) {
         thread::sleep(Duration::from_millis(200));
     }
+
+    hub.detach();
 }

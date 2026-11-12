@@ -6,11 +6,13 @@ use crate::router::{
     },
     midi_handler::MidiHandler,
     output_connection::OutputConnection,
+    remote::{RemoteEvent, RouterHandles},
 };
 use anyhow::{Context, Result, anyhow};
 use log::info;
 use midir::{MidiIO, MidiInput, MidiInputPort, MidiOutput, MidiOutputPort};
 use std::sync::{Arc, Mutex};
+use tokio::sync::broadcast;
 
 pub struct MidiRouter {
     from_controller_connection: InputConnection,
@@ -38,13 +40,24 @@ struct MidiConnections {
 }
 
 impl MidiRouter {
-    pub fn new(config: MappingConfig) -> Self {
+    pub fn new(config: MappingConfig, events: broadcast::Sender<RemoteEvent>) -> Self {
+        let mut handler = MidiHandler::new(config);
+        handler.set_event_sender(events);
+
         Self {
             from_controller_connection: InputConnection::new(),
             to_controller_connection: Arc::new(Mutex::new(OutputConnection::new())),
             from_software_connection: InputConnection::new(),
             to_software_connection: Arc::new(Mutex::new(OutputConnection::new())),
-            midi_handler: Arc::new(Mutex::new(MidiHandler::new(config))),
+            midi_handler: Arc::new(Mutex::new(handler)),
+        }
+    }
+
+    pub fn handles(&self) -> RouterHandles {
+        RouterHandles {
+            handler: Arc::clone(&self.midi_handler),
+            to_controller: Arc::clone(&self.to_controller_connection),
+            to_software: Arc::clone(&self.to_software_connection),
         }
     }
 

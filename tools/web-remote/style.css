@@ -1,0 +1,62 @@
+/* Colours from tools/apc40-sim/style.css. Touch-first, dark venue. */
+html, body { height: 100%; margin: 0; background: #111; color: #ddd; font: 16px system-ui, sans-serif; }
+html { touch-action: manipulation; -webkit-text-size-adjust: 100%; }
+body {
+  display: flex; flex-direction: column; overflow: hidden; height: 100dvh;
+  user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  box-sizing: border-box;
+}
+.dim { color: #888; }
+
+#bar { display: flex; align-items: center; gap: 12px; padding: 6px 10px; background: #1b1b1d; border-bottom: 1px solid #333; }
+#pages { display: flex; gap: 6px; flex: 1; }
+.page {
+  flex: 1; max-width: 72px; height: 44px; border: 1px solid #444; border-radius: 6px;
+  background: #2a2a2e; color: #ddd; font: 600 18px system-ui, sans-serif; touch-action: none;
+}
+.page.active { background: #e0a020; border-color: #e0a020; color: #111; }
+
+#banner { padding: 8px 10px; background: #a02020; color: #fff; font-weight: 600; text-align: center; }
+#banner[hidden] { display: none; }
+
+#grid {
+  flex: 1 1 0; min-height: 0; display: grid; padding: 10px; gap: 8px;
+  grid-template-columns: repeat(8, 1fr) 0.85fr; grid-template-rows: repeat(5, 1fr);
+}
+.pad {
+  border-radius: 6px; background: #333; border: 2px solid #000; touch-action: none;
+}
+.pad.scene { margin-left: 14px; border-radius: 50%; aspect-ratio: 1; align-self: center; justify-self: center; height: 100%; max-width: 100%; }
+.pad.held { border-color: #fff; }
+.blink { animation: blink 0.5s step-end infinite; }
+@keyframes blink { 50% { filter: brightness(0.35); } }
+
+#faders {
+  flex: 0 0 34%; display: grid; grid-template-columns: repeat(8, 1fr) 0.85fr; gap: 8px;
+  padding: 6px 10px 10px; background: #151517; border-top: 1px solid #333;
+}
+.fader { --v: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; touch-action: none; min-height: 0; }
+.fader:last-child { margin-left: 14px; }
+.track { position: relative; flex: 1; width: 44px; min-height: 0; border-radius: 6px; background: #2a2a2e; overflow: hidden; }
+.fill { position: absolute; left: 0; right: 0; bottom: 0; height: calc(var(--v) * 100%); background: #3a6e9a; }
+.thumb {
+  position: absolute; left: 0; right: 0; height: 18px; bottom: calc(var(--v) * (100% - 18px));
+  background: #ddd; border-radius: 4px;
+}
+.fader.held .thumb { background: #fff; box-shadow: 0 0 0 2px #e0a020; }
+.fader.unknown .thumb { background: #555; }
+.fader.unknown .fill { display: none; }
+.flabel { font-weight: 600; color: #c8c8c8; }
+
+body.offline #grid, body.offline #faders { opacity: 0.4; }
+
+#pin-overlay {
+  position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.85);
+}
+#pin-overlay[hidden] { display: none; }
+#pin-form { display: flex; flex-direction: column; gap: 10px; padding: 20px; background: #1b1b1d; border: 1px solid #333; border-radius: 8px; min-width: 260px; }
+#pin-form input { font-size: 24px; padding: 8px; background: #111; color: #fff; border: 1px solid #444; border-radius: 6px; user-select: text; -webkit-user-select: text; }
+#pin-form button { height: 48px; font-size: 18px; border: 0; border-radius: 6px; background: #e0a020; color: #111; font-weight: 600; }
+#pin-msg { color: #ff6b6b; min-height: 1.2em; }

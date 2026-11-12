@@ -1,3 +1,4 @@
+use crate::utils::helper::open_in_browser;
 use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use log::info;
@@ -29,6 +30,8 @@ pub struct App {
     logs_api: Vec<String>,
     log_rx_router: Receiver<String>,
     log_rx_api: Receiver<String>,
+    web_line: String,
+    local_url: Option<String>,
 }
 
 impl App {
@@ -39,6 +42,8 @@ impl App {
         restart: Arc<AtomicBool>,
         log_rx_router: Receiver<String>,
         log_rx_api: Receiver<String>,
+        web_line: String,
+        local_url: Option<String>,
     ) -> Self {
         Self {
             controller_name,
@@ -49,6 +54,8 @@ impl App {
             logs_api: Vec::new(),
             log_rx_router,
             log_rx_api,
+            web_line,
+            local_url,
         }
     }
     pub fn run(&mut self, terminal: &mut DefaultTerminal) -> Result<()> {
@@ -96,6 +103,11 @@ impl App {
                 self.restart.store(true, Ordering::SeqCst);
                 info!("Restart requested from TUI");
             }
+            KeyCode::Char('w') => {
+                if let Some(url) = &self.local_url {
+                    open_in_browser(url);
+                }
+            }
             _ => {}
         }
     }
@@ -114,7 +126,10 @@ impl Widget for &App {
             "<Q> ".blue().bold(),
             "| ".green().bold(),
             "Reload router ".white(),
-            "<R>".blue().bold(),
+            "<R> ".blue().bold(),
+            "| ".green().bold(),
+            "Open web remote ".white(),
+            "<W>".blue().bold(),
             " ]".bold(),
         ]);
         let block = Block::bordered()
@@ -134,7 +149,7 @@ impl Widget for &App {
 
         let bottom = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Percentage(25), Constraint::Percentage(75)].as_ref())
+            .constraints([Constraint::Length(6), Constraint::Min(0)].as_ref())
             .split(chunks[1]);
 
         let log_router_area = chunks[0];
@@ -180,6 +195,14 @@ impl Widget for &App {
                 "from Software: ".into(),
                 "from_".cyan().bold(),
                 self.software_name.to_string().cyan().bold(),
+            ]),
+            Line::from(vec![
+                "Web remote:    ".into(),
+                if self.web_line == "off" {
+                    "off".dark_gray().bold()
+                } else {
+                    self.web_line.clone().green().bold()
+                },
             ]),
         ])
         .white();

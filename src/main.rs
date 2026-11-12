@@ -2,9 +2,11 @@ mod api;
 mod router;
 mod utils;
 
+use crate::api::auth::valid_pin;
+use crate::router::remote::RemoteHub;
 use crate::utils::{
     config::Config,
-    helper::{ForwardLogger, update},
+    helper::{ForwardLogger, lan_host, update, web_remote_line, web_url},
     threads::{api_thread, router_thread, tui_thread},
 };
 use anyhow::Result;
@@ -48,6 +50,7 @@ async fn check_update(config: &Config) -> Result<()> {
 fn init_threads(config: &Config, logs: (Receiver<String>, Receiver<String>)) -> Result<()> {
     let restart = Arc::new(AtomicBool::new(false));
     let exit = Arc::new(AtomicBool::new(false));
+    let hub = RemoteHub::new();
 
     router_thread(
         restart.clone(),
@@ -55,8 +58,20 @@ fn init_threads(config: &Config, logs: (Receiver<String>, Receiver<String>)) -> 
         config.maps.clone(),
         config.router.controller_name.clone(),
         config.router.software_name.clone(),
+        hub.clone(),
     );
-    api_thread(exit.clone(), config.api.clone());
+    let (web, local) = if config.api.enabled && valid_pin(&config.api.pin) {
+        api_thread(exit.clone(), config.api.clone(), hub);
+        let port = config.api.port;
+        let lan = lan_host(&config.api.bind_address).map(|h| web_url(&h, port));
+        (
+            web_remote_line(true, lan.as_deref(), port),
+            Some(web_url("localhost", port)),
+        )
+    } else {
+        warn!(target: "api", "Web remote off: set pin in config.toml (digits only, at least 4)");
+        (web_remote_line(false, None, 0), None)
+    };
     tui_thread(
         restart.clone(),
         exit.clone(),
@@ -64,6 +79,8 @@ fn init_threads(config: &Config, logs: (Receiver<String>, Receiver<String>)) -> 
         logs.1,
         config.router.controller_name.clone(),
         config.router.software_name.clone(),
+        web,
+        local,
     )?;
 
     Ok(())
