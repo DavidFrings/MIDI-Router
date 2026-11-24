@@ -108,8 +108,9 @@ async function loadJoystick() {
   try {
     drawJoystick(await api.joystick());
     $('joy-toggle').hidden = false;
-  } catch {
+  } catch (e) {
     // 404 = no joystick configured, anything else = optional view unavailable: never take the page offline
+    if (e.status !== 404) console.warn('joystick view unavailable', e);
     $('joy-toggle').hidden = true;
     joyView = false;
     showJoyView();

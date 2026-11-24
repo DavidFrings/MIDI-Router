@@ -246,7 +246,7 @@ impl MidiHandler {
         // Lock order handler -> joystick; the joystick thread never takes the handler lock.
         if let (ControlChange(channel, control, value), Some(joystick)) = (&midi_message, &self.joystick) {
             let mut joystick = joystick.lock().unwrap();
-            if channel.index() + 1 == joystick.channel() {
+            if channel.index() + 1 == joystick.channel() && joystick.owns(u8::from(*control)) {
                 if joystick.feedback(u8::from(*control), u8::from(*value), Instant::now())
                     && let Some(events) = &self.events
                 {
@@ -458,6 +458,22 @@ mod tests {
         let events: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
         assert!(events.iter().any(|e| matches!(e, RemoteEvent::Joystick(s) if s.values[1] == Some(100))));
         assert!(!events.iter().any(|e| matches!(e, RemoteEvent::Fader { .. })));
+    }
+
+    #[test]
+    fn joystick_channel_cc_not_owned_by_a_bank_is_routed_normally() {
+        let mut h = handler();
+        let (tx, mut rx) = broadcast::channel(16);
+        h.set_event_sender(tx);
+        let joystick = Arc::new(Mutex::new(JoystickState::new(
+            toml::from_str("channel = 2\nbanks = [{pan = 20, tilt = 21}]").unwrap(),
+        )));
+        h.set_joystick(joystick.clone());
+
+        feedback(&mut h, cc_val(Channel::Ch2, 3, 77));
+
+        assert_eq!(h.snapshot(Channel::Ch2).faders[3], Some(77));
+        assert_eq!(rx.try_recv().unwrap(), RemoteEvent::Fader { page: 2, index: 3, value: 77 });
     }
 
     #[test]

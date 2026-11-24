@@ -100,6 +100,11 @@ impl JoystickState {
         self.channel
     }
 
+    /// True if any bank uses `cc` in any of its slots.
+    pub fn owns(&self, cc: u8) -> bool {
+        self.banks.iter().any(|b| b.ccs.contains(&Some(cc)))
+    }
+
     pub fn input(&mut self, input: JoyInput) {
         match input {
             JoyInput::Button {
@@ -135,7 +140,10 @@ impl JoystickState {
                 }
                 self.hat_x = x;
             }
-            JoyInput::Axis { axis, value } => self.axes[axis as usize] = value,
+            JoyInput::Axis { axis, value } => {
+                // A bad backend must never poison stored values.
+                self.axes[axis as usize] = if value.is_finite() { value } else { 0.0 };
+            }
             JoyInput::Connected(c) => {
                 self.connected = c;
                 if !c {
@@ -457,6 +465,23 @@ mod tests {
         assert_eq!(s.snapshot().values[0], Some(64));
         btn(&mut s, 5);
         assert_eq!(s.snapshot().values[0], v);
+    }
+
+    #[test]
+    fn owns_any_slot_of_any_bank() {
+        let s = state();
+        assert!(s.owns(20) && s.owns(23) && s.owns(31));
+        assert!(!s.owns(7) && !s.owns(99));
+    }
+
+    #[test]
+    fn non_finite_axis_is_zero() {
+        let mut s = state();
+        for v in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            axis(&mut s, Axis::X, 1.0);
+            axis(&mut s, Axis::X, v);
+            assert_eq!(s.axes[0], 0.0);
+        }
     }
 
     #[test]
