@@ -16,7 +16,12 @@ struct Log {
 impl Log {
     fn line(&self, msg: &str) {
         let step = self.step.lock().map(|s| s.clone()).unwrap_or_default();
-        let l = format!("[{:>7} ms][{}] {}", self.start.elapsed().as_millis(), step, msg);
+        let l = format!(
+            "[{:>7} ms][{}] {}",
+            self.start.elapsed().as_millis(),
+            step,
+            msg
+        );
         println!("{l}");
         if let Ok(mut f) = self.file.lock() {
             let _ = writeln!(f, "{l}");
@@ -32,7 +37,10 @@ impl Log {
 }
 
 fn hex(b: &[u8]) -> String {
-    b.iter().map(|x| format!("{x:02X}")).collect::<Vec<_>>().join(" ")
+    b.iter()
+        .map(|x| format!("{x:02X}"))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// Drains pending gilrs events into the log, then sleeps briefly.
@@ -46,13 +54,22 @@ fn pump(log: &Log, gilrs: &mut Option<Gilrs>) {
                     println!("Button {code} gedrückt");
                 }
                 EventType::ButtonReleased(b, c) => {
-                    log.line(&format!("gilrs ButtonReleased {b:?} code={} value=0", c.into_u32()));
+                    log.line(&format!(
+                        "gilrs ButtonReleased {b:?} code={} value=0",
+                        c.into_u32()
+                    ));
                 }
                 EventType::ButtonChanged(b, v, c) => {
-                    log.line(&format!("gilrs ButtonChanged {b:?} code={} value={v}", c.into_u32()));
+                    log.line(&format!(
+                        "gilrs ButtonChanged {b:?} code={} value={v}",
+                        c.into_u32()
+                    ));
                 }
                 EventType::AxisChanged(a, v, c) => {
-                    log.line(&format!("gilrs AxisChanged {a:?} code={} value={v}", c.into_u32()));
+                    log.line(&format!(
+                        "gilrs AxisChanged {a:?} code={} value={v}",
+                        c.into_u32()
+                    ));
                 }
                 other => log.line(&format!("gilrs {other:?}")),
             }
@@ -62,11 +79,32 @@ fn pump(log: &Log, gilrs: &mut Option<Gilrs>) {
 }
 
 fn main() {
-    let path = std::env::current_exe()
+    const NAME: &str = "joystick-probe-log.txt";
+    let exe_dir = std::env::current_exe()
         .ok()
-        .and_then(|p| p.parent().map(|d| d.join("joystick-probe-log.txt")))
-        .unwrap_or_else(|| "joystick-probe-log.txt".into());
-    let file = File::create(&path).expect("Log-Datei kann nicht angelegt werden");
+        .and_then(|p| p.parent().map(|d| d.to_path_buf()));
+    let candidates = [
+        exe_dir.map(|d| d.join(NAME)),
+        Some(std::env::temp_dir().join(NAME)),
+    ];
+    let mut opened = None;
+    for path in candidates.into_iter().flatten() {
+        match File::create(&path) {
+            Ok(f) => {
+                opened = Some((path, f));
+                break;
+            }
+            Err(e) => println!(
+                "Log-Datei {} kann nicht angelegt werden: {e}",
+                path.display()
+            ),
+        }
+    }
+    let Some((path, file)) = opened else {
+        println!("Es konnte keine Log-Datei angelegt werden. Bitte Enter drücken zum Beenden.");
+        let _ = stdin().read_line(&mut String::new());
+        return;
+    };
     let log = Log {
         file: Arc::new(Mutex::new(file)),
         start: Instant::now(),
@@ -79,7 +117,7 @@ fn main() {
     let (tx, rx) = mpsc::channel::<()>();
     std::thread::spawn(move || {
         let mut s = String::new();
-        while stdin().read_line(&mut s).is_ok() {
+        while matches!(stdin().read_line(&mut s), Ok(n) if n > 0) {
             s.clear();
             if tx.send(()).is_err() {
                 break;
@@ -109,67 +147,84 @@ fn main() {
     };
 
     let stop = Arc::new(AtomicBool::new(false));
-    let mut hid_thread = None;
+    let mut hid_threads = Vec::new();
     match hidapi::HidApi::new() {
         Ok(api) => {
             for d in api.device_list() {
                 log.line(&format!(
-                    "hid: vid={:04X} pid={:04X} product={:?} usage_page={} usage={} interface={}",
+                    "hid: vid={:04X} pid={:04X} product={:?} usage_page={} usage={} interface={} path={:?}",
                     d.vendor_id(),
                     d.product_id(),
                     d.product_string(),
                     d.usage_page(),
                     d.usage(),
-                    d.interface_number()
+                    d.interface_number(),
+                    d.path()
                 ));
             }
-            let chosen = api
-                .device_list()
-                .find(|d| d.vendor_id() == 0x044F)
-                .or_else(|| api.device_list().find(|d| d.usage_page() == 1 && d.usage() == 4));
-            match chosen {
-                None => log.line("hid: kein passendes Gerät gefunden"),
-                Some(info) => {
-                    log.line(&format!(
-                        "hid: gewählt vid={:04X} pid={:04X} {:?}",
-                        info.vendor_id(),
-                        info.product_id(),
-                        info.product_string()
-                    ));
-                    match info.open_device(&api) {
-                        Err(e) => log.line(&format!("hid: open Fehler: {e}")),
-                        Ok(dev) => {
-                            let mut desc = [0u8; 4096];
-                            match dev.get_report_descriptor(&mut desc) {
-                                Ok(n) => log.line(&format!(
-                                    "hid: Report-Descriptor ({n} Bytes): {}",
-                                    hex(&desc[..n])
-                                )),
-                                Err(e) => log.line(&format!("hid: Descriptor Fehler: {e}")),
-                            }
-                            let (l, stop) = (log.clone(), stop.clone());
-                            hid_thread = Some(std::thread::spawn(move || {
-                                let mut buf = [0u8; 256];
-                                let mut prev: Vec<u8> = Vec::new();
-                                while !stop.load(Ordering::Relaxed) {
-                                    match dev.read_timeout(&mut buf, 50) {
-                                        Ok(0) => {}
-                                        Ok(n) => {
-                                            if buf[..n] != prev[..] {
-                                                l.line(&format!("hid report: {}", hex(&buf[..n])));
-                                                prev = buf[..n].to_vec();
-                                            }
-                                        }
-                                        Err(e) => {
-                                            l.line(&format!("hid: Lesefehler: {e}"));
-                                            break;
-                                        }
-                                    }
+            let all = || api.device_list();
+            let mut chosen: Vec<_> = all()
+                .filter(|d| {
+                    d.vendor_id() == 0x044F && d.usage_page() == 1 && matches!(d.usage(), 4 | 5)
+                })
+                .collect();
+            if chosen.is_empty() {
+                chosen = all().filter(|d| d.vendor_id() == 0x044F).collect();
+            }
+            if chosen.is_empty() {
+                chosen = all()
+                    .filter(|d| d.usage_page() == 1 && d.usage() == 4)
+                    .take(1)
+                    .collect();
+            }
+            if chosen.is_empty() {
+                log.line("hid: kein passendes Gerät gefunden");
+            }
+            for (idx, info) in chosen.into_iter().enumerate() {
+                let tag = format!("hid#{idx} {:?}", info.path());
+                log.line(&format!(
+                    "{tag}: gewählt vid={:04X} pid={:04X} usage_page={} usage={} {:?}",
+                    info.vendor_id(),
+                    info.product_id(),
+                    info.usage_page(),
+                    info.usage(),
+                    info.product_string()
+                ));
+                let dev = match info.open_device(&api) {
+                    Ok(d) => d,
+                    Err(e) => {
+                        log.line(&format!("{tag}: open Fehler: {e}"));
+                        continue;
+                    }
+                };
+                let mut desc = [0u8; 4096];
+                match dev.get_report_descriptor(&mut desc) {
+                    Ok(n) => log.line(&format!(
+                        "{tag}: Report-Descriptor ({n} Bytes): {}",
+                        hex(&desc[..n])
+                    )),
+                    Err(e) => log.line(&format!("{tag}: Descriptor Fehler: {e}")),
+                }
+                let (l, stop) = (log.clone(), stop.clone());
+                hid_threads.push(std::thread::spawn(move || {
+                    let mut buf = [0u8; 256];
+                    let mut prev: Vec<u8> = Vec::new();
+                    while !stop.load(Ordering::Relaxed) {
+                        match dev.read_timeout(&mut buf, 50) {
+                            Ok(0) => {}
+                            Ok(n) => {
+                                if buf[..n] != prev[..] {
+                                    l.line(&format!("{tag} report: {}", hex(&buf[..n])));
+                                    prev = buf[..n].to_vec();
                                 }
-                            }));
+                            }
+                            Err(e) => {
+                                l.line(&format!("{tag}: Lesefehler: {e}"));
+                                break;
+                            }
                         }
                     }
-                }
+                }));
             }
         }
         Err(e) => log.line(&format!("hidapi Fehler: {e}")),
@@ -177,10 +232,19 @@ fn main() {
 
     let steps = [
         ("1", "Geräte suchen: fertig (siehe oben). Weiter mit Enter."),
-        ("2", "Drücke nacheinander Trigger, Button 2, 3, 4 – dann Enter"),
-        ("3", "Drücke die Basis-Buttons 5–16 der Reihe nach – dann Enter"),
+        (
+            "2",
+            "Drücke nacheinander Trigger, Button 2, 3, 4 – dann Enter",
+        ),
+        (
+            "3",
+            "Drücke die Basis-Buttons 5–16 der Reihe nach – dann Enter",
+        ),
         ("4", "Hat: hoch, rechts, runter, links – dann Enter"),
-        ("5", "Stick: ganz links, ganz rechts, ganz vor, ganz zurück, dann loslassen – dann Enter"),
+        (
+            "5",
+            "Stick: ganz links, ganz rechts, ganz vor, ganz zurück, dann loslassen – dann Enter",
+        ),
     ];
     for (id, text) in steps {
         log.set_step(id);
@@ -205,10 +269,13 @@ fn main() {
     while rx.try_recv().is_ok() {}
 
     log.set_step("7");
-    log.line("Fertig. Schick die Datei joystick-probe-log.txt zurück. Enter zum Beenden.");
+    log.line(&format!(
+        "Fertig. Schick die Datei joystick-probe-log.txt zurück ({}). Enter zum Beenden.",
+        path.display()
+    ));
     let _ = rx.recv();
     stop.store(true, Ordering::Relaxed);
-    if let Some(h) = hid_thread {
+    for h in hid_threads {
         let _ = h.join();
     }
 }

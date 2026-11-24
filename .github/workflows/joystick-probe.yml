@@ -20,11 +20,15 @@ jobs:
       - name: Build
         run: cargo build --release --locked --manifest-path tools/joystick-probe/Cargo.toml
 
+      - name: Collect files
+        shell: bash
+        run: |
+          mkdir dist
+          cp tools/joystick-probe/target/release/joystick-probe.exe tools/joystick-probe/README.md dist/
+
       - name: Upload probe
         uses: actions/upload-artifact@v4
         with:
           name: joystick-probe
-          path: |
-            tools/joystick-probe/target/release/joystick-probe.exe
-            tools/joystick-probe/README.md
+          path: dist/
           if-no-files-found: error
