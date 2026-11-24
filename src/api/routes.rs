@@ -54,6 +54,7 @@ pub fn configure(
         cfg.app_data(state)
             .service(health)
             .service(page_state)
+            .service(joystick)
             .service(press)
             .service(fader)
             .service(crate::api::ws::ws);
@@ -68,6 +69,18 @@ pub fn configure(
 fn auth(req: &HttpRequest, state: &ApiState) -> Result<(), HttpResponse> {
     let given = req.headers().get("X-Pin").and_then(|v| v.to_str().ok());
     authorize(req, state, given)
+}
+
+#[get("/api/joystick")]
+async fn joystick(req: HttpRequest, state: web::Data<ApiState>) -> HttpResponse {
+    (|| -> Reply {
+        auth(&req, &state)?;
+        // Not via with_router: the joystick state outlives (and ignores) router restarts.
+        let js = state.hub.joystick.get().ok_or_else(|| HttpResponse::NotFound().finish())?;
+        let snap = js.lock().unwrap_or_else(|e| e.into_inner()).snapshot();
+        Ok(HttpResponse::Ok().json(snap))
+    })()
+    .unwrap_or_else(|r| r)
 }
 
 fn bank(page: u8) -> Result<Channel, HttpResponse> {
@@ -228,6 +241,34 @@ mod tests {
         let app = app!(state(None));
         let res = test::call_service(&app, get("/health", None).to_request()).await;
         assert_eq!(res.status(), StatusCode::OK);
+    }
+
+    #[actix_web::test]
+    async fn joystick_without_pin_is_401() {
+        let app = app!(state(None));
+        let res = test::call_service(&app, get("/api/joystick", None).to_request()).await;
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[actix_web::test]
+    async fn joystick_not_configured_is_404() {
+        let app = app!(state(None));
+        let res = test::call_service(&app, get("/api/joystick", Some(PIN)).to_request()).await;
+        assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[actix_web::test]
+    async fn joystick_returns_snapshot() {
+        let st = state(None); // detached router must not matter
+        let js = crate::joystick::state::JoystickState::new(
+            toml::from_str("channel = 16\nbanks = [{pan = 20, tilt = 21}]").unwrap(),
+        );
+        let _ = st.hub.joystick.set(Arc::new(Mutex::new(js)));
+        let app = app!(st);
+        let res = test::call_service(&app, get("/api/joystick", Some(PIN)).to_request()).await;
+        assert_eq!(res.status(), StatusCode::OK);
+        let body: Value = test::read_body_json(res).await;
+        assert_eq!(body["bank"], 1);
     }
 
     #[actix_web::test]

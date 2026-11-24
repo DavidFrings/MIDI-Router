@@ -59,6 +59,8 @@ fn init_threads(config: &Config, logs: (Receiver<String>, Receiver<String>)) -> 
         joystick_thread(exit.clone(), hub.clone(), state, device::open(&cfg.device));
     }
 
+    let joystick = hub.joystick.get().cloned();
+
     router_thread(
         restart.clone(),
         exit.clone(),
@@ -88,6 +90,7 @@ fn init_threads(config: &Config, logs: (Receiver<String>, Receiver<String>)) -> 
         config.router.software_name.clone(),
         web,
         local,
+        joystick,
     )?;
 
     Ok(())

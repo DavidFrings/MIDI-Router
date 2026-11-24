@@ -1,4 +1,7 @@
-use crate::utils::helper::open_in_browser;
+use crate::{
+    joystick::state::{JoystickSnapshot, JoystickState},
+    utils::helper::open_in_browser,
+};
 use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use log::info;
@@ -13,7 +16,7 @@ use ratatui::{
 };
 use std::{
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicBool, Ordering},
         mpsc::Receiver,
     },
@@ -32,6 +35,7 @@ pub struct App {
     log_rx_api: Receiver<String>,
     web_line: String,
     local_url: Option<String>,
+    joystick: Option<Arc<Mutex<JoystickState>>>,
 }
 
 impl App {
@@ -44,6 +48,7 @@ impl App {
         log_rx_api: Receiver<String>,
         web_line: String,
         local_url: Option<String>,
+        joystick: Option<Arc<Mutex<JoystickState>>>,
     ) -> Self {
         Self {
             controller_name,
@@ -56,6 +61,7 @@ impl App {
             log_rx_api,
             web_line,
             local_url,
+            joystick,
         }
     }
     pub fn run(&mut self, terminal: &mut DefaultTerminal) -> Result<()> {
@@ -147,9 +153,10 @@ impl Widget for &App {
             .constraints([Constraint::Percentage(60), Constraint::Percentage(40)].as_ref())
             .split(area);
 
+        let config_h = if self.joystick.is_some() { 8 } else { 6 };
         let bottom = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Length(6), Constraint::Min(0)].as_ref())
+            .constraints([Constraint::Length(config_h), Constraint::Min(0)].as_ref())
             .split(chunks[1]);
 
         let log_router_area = chunks[0];
@@ -181,7 +188,7 @@ impl Widget for &App {
             .saturating_sub(api_inner_h as usize)
             .min(u16::MAX as usize) as u16;
 
-        let config_text = Text::from(vec![
+        let mut config_lines = vec![
             Line::from(vec![
                 "Controller:    ".into(),
                 self.controller_name.to_string().red().bold(),
@@ -204,8 +211,12 @@ impl Widget for &App {
                     self.web_line.clone().green().bold()
                 },
             ]),
-        ])
-        .white();
+        ];
+        if let Some(js) = &self.joystick {
+            let snap = js.lock().unwrap_or_else(|e| e.into_inner()).snapshot();
+            config_lines.push(Line::from(joystick_line(&snap)));
+        }
+        let config_text = Text::from(config_lines).white();
 
         Paragraph::new(log_router_text.on_black())
             .block(
@@ -241,6 +252,21 @@ impl Widget for &App {
     }
 }
 
+pub fn joystick_line(s: &JoystickSnapshot) -> String {
+    let v = |x: Option<u8>| x.map_or("-".to_string(), |n| n.to_string());
+    format!(
+        "Joystick: {} · bank {}/{} · {} · pan {} tilt {} · fine {} {}",
+        if s.connected { "connected" } else { "not connected" },
+        s.bank,
+        s.banks,
+        if s.fine { "FINE" } else { "coarse" },
+        v(s.values[0]),
+        v(s.values[1]),
+        v(s.values[2]),
+        v(s.values[3]),
+    )
+}
+
 fn format_log_line(s: &str) -> Line<'_> {
     if let Some(rest) = s.strip_prefix("INFO: ") {
         Line::from(vec!["INFO:  ".green().bold(), rest.white()])
@@ -252,5 +278,29 @@ fn format_log_line(s: &str) -> Line<'_> {
         Line::from(vec!["DEBUG: ".blue(), rest.white()])
     } else {
         Line::from(s)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn snap(connected: bool, fine: bool, values: [Option<u8>; 4]) -> JoystickSnapshot {
+        JoystickSnapshot { connected, bank: if connected { 2 } else { 1 }, banks: 3, fine, values }
+    }
+
+    #[test]
+    fn joystick_line_connected_fine() {
+        let s = snap(true, true, [Some(64), Some(70), Some(12), None]);
+        assert_eq!(
+            joystick_line(&s),
+            "Joystick: connected · bank 2/3 · FINE · pan 64 tilt 70 · fine 12 -"
+        );
+    }
+
+    #[test]
+    fn joystick_line_disconnected_coarse() {
+        let s = snap(false, false, [None; 4]);
+        assert!(joystick_line(&s).starts_with("Joystick: not connected · bank 1/3 · coarse"));
     }
 }

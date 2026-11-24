@@ -1,4 +1,5 @@
 use crate::{
+    joystick::state::JoystickState,
     api::server::start_server,
     router::{mapping_config::MappingConfig, midi_connection::MidiRouter, remote::RemoteHub},
     utils::{config::ApiConfig, tui::App},
@@ -7,7 +8,7 @@ use anyhow::Result;
 use log::{debug, error, info};
 use std::{
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicBool, Ordering},
         mpsc::Receiver,
     },
@@ -25,6 +26,7 @@ pub(crate) fn tui_thread(
     software: String,
     web_line: String,
     local_url: Option<String>,
+    joystick: Option<Arc<Mutex<JoystickState>>>,
 ) -> Result<()> {
     let mut app = App::new(
         controller,
@@ -35,6 +37,7 @@ pub(crate) fn tui_thread(
         log_api,
         web_line,
         local_url,
+        joystick,
     );
 
     let handle = thread::spawn(move || {

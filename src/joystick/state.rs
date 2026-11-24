@@ -48,6 +48,7 @@ pub struct JoystickSnapshot {
     pub values: [Option<u8>; 4],
 }
 
+#[derive(Debug)]
 struct Bank {
     ccs: [Option<u8>; 4],
     values: [f32; 4],
@@ -55,6 +56,7 @@ struct Bank {
     last_sent: [Option<Instant>; 4],
 }
 
+#[derive(Debug)]
 pub struct JoystickState {
     channel: u8,
     speed: f32,
