@@ -10,6 +10,9 @@ Open `http://<router-ip>:<port>/` on the tablet in landscape and enter the PIN o
 - Pads send press on touch and release on lift, cancel or lost capture; held pads
   are released when the tab is hidden.
 - Faders move relative to where you touch them, so they never jump.
+- Joystick: if the router has a `[joystick]` section, a "Joystick" button appears in the
+  top bar. It shows a read-only view of the coarse and fine squares (active one
+  highlighted), the bank (n/N) and "not connected" when the stick is unplugged.
 - Red banner = offline (no WebSocket, or "Router not connected"); controls are
   disabled and the page retries every 2 s.
 

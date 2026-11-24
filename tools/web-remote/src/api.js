@@ -38,6 +38,7 @@ export function createApi(getPin) {
       pressChain = p.catch(() => {});
       return p;
     },
+    joystick: () => call('GET', '/api/joystick'),
     fader: (page, index, value) => call('POST', '/api/fader', { page, index, value }),
     openWs: () => new WebSocket(
       `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws?pin=${encodeURIComponent(getPin() ?? '')}`),

@@ -1,6 +1,6 @@
 import test, { mock } from 'node:test';
 import assert from 'node:assert/strict';
-import { GRID, padLook, createFaderLock, throttleLatest, loadPage, savePage, createPendingReleases } from '../src/model.js';
+import { GRID, padLook, createFaderLock, throttleLatest, loadPage, savePage, createPendingReleases, dotPos } from '../src/model.js';
 import { RGB } from '../src/colors.js';
 
 test('GRID top row is 32-39 plus scene 82', () => {
@@ -98,4 +98,11 @@ test('failed release stays pending until a flush succeeds', async () => {
   assert.deepEqual(sent.slice(-2), [[2, 5], [3, 82]]);
   await pending.flush(send); // empty flush sends nothing
   assert.equal(sent.length, 3);
+});
+
+test('dotPos maps 0..127 to percent, y inverted, null when unknown', () => {
+  assert.deepEqual(dotPos(0, 0), { left: 0, top: 100 });
+  assert.deepEqual(dotPos(127, 127), { left: 100, top: 0 });
+  assert.equal(dotPos(64, null), null);
+  assert.equal(dotPos(null, 64), null);
 });

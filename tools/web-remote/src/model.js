@@ -92,3 +92,9 @@ export function createPendingReleases() {
     },
   };
 }
+
+/** Joystick dot position in percent of its square (y up); null when either axis is unknown. */
+export function dotPos(x, y) {
+  if (x == null || y == null) return null;
+  return { left: (x / 127) * 100, top: (1 - y / 127) * 100 };
+}

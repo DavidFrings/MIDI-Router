@@ -1,5 +1,5 @@
 // DOM wiring only; testable logic lives in model.js.
-import { GRID, padLook, createFaderLock, throttleLatest, loadPage, savePage, createPendingReleases } from './model.js';
+import { GRID, padLook, createFaderLock, throttleLatest, loadPage, savePage, createPendingReleases, dotPos } from './model.js';
 import { createApi } from './api.js';
 
 const PIN_KEY = 'webRemote.pin';
@@ -77,6 +77,45 @@ function render(state) {
   });
 }
 
+// ---------- joystick (read-only) ----------
+let joyView = false;
+
+function drawJoySquare(id, a, b, active) {
+  const el = $(id);
+  const pos = dotPos(a, b);
+  el.classList.toggle('active', active);
+  el.classList.toggle('unknown', !pos);
+  const dot = el.querySelector('.jdot');
+  dot.style.left = (pos?.left ?? 50) + '%';
+  dot.style.top = (pos?.top ?? 50) + '%';
+}
+
+function drawJoystick(j) {
+  const v = j.values ?? [null, null, null, null];
+  drawJoySquare('joy-coarse', v[0], v[1], !j.fine);
+  drawJoySquare('joy-fine', v[2], v[3], !!j.fine);
+  $('joy-bank').textContent = `Bank ${j.bank}/${j.banks}`;
+  $('joy-conn').textContent = j.connected ? '' : 'not connected';
+}
+
+function showJoyView() {
+  $('joy-toggle').classList.toggle('active', joyView);
+  $('grid').hidden = $('faders').hidden = joyView;
+  $('joystick').hidden = !joyView;
+}
+
+async function loadJoystick() {
+  try {
+    const j = await api.joystick();
+    $('joy-toggle').hidden = false;
+    drawJoystick(j);
+  } catch (e) {
+    if (e.status !== 404) throw e; // 404 = no joystick configured: toggle stays hidden
+  }
+}
+
+$('joy-toggle').addEventListener('click', () => { joyView = !joyView; showJoyView(); });
+
 function drawPages() {
   [...$('pages').children].forEach((b, i) => b.classList.toggle('active', i + 1 === page));
 }
@@ -129,6 +168,8 @@ async function resync() {
     const state = await api.state(page);
     if (gen !== syncGen || state.page !== page) return; // page changed meanwhile
     render(state);
+    await loadJoystick();
+    if (gen !== syncGen) return;
     if (ws && ws.readyState === WebSocket.OPEN) setOnline(true);
   } catch (e) {
     if (gen === syncGen) handleError(e);
@@ -157,6 +198,7 @@ function onMessage(data) {
   let m;
   try { m = JSON.parse(data); } catch { return; }
   if (m.type === 'resync') return resync();
+  if (m.type === 'joystick') return drawJoystick(m);
   if (m.page !== page) return;
   if (m.type === 'pad') drawPad(m.note, m);
   else if (m.type === 'fader' && lock.accepts(m.index)) {
