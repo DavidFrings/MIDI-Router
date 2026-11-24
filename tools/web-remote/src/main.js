@@ -106,11 +106,13 @@ function showJoyView() {
 
 async function loadJoystick() {
   try {
-    const j = await api.joystick();
+    drawJoystick(await api.joystick());
     $('joy-toggle').hidden = false;
-    drawJoystick(j);
-  } catch (e) {
-    if (e.status !== 404) throw e; // 404 = no joystick configured: toggle stays hidden
+  } catch {
+    // 404 = no joystick configured, anything else = optional view unavailable: never take the page offline
+    $('joy-toggle').hidden = true;
+    joyView = false;
+    showJoyView();
   }
 }
 
