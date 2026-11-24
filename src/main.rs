@@ -1,4 +1,5 @@
 mod api;
+mod joystick;
 mod router;
 mod utils;
 

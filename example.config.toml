@@ -42,3 +42,18 @@ new_note = [21, 22, 23, 24, 25, 26, 27, 28]
 [[maps.control_map]]
 note = 3
 new_note = [4, 5, 6, 7, 8, 9, 10, 11]
+
+# Optional: Thrustmaster joystick drives moving-head pan/tilt as 7-bit CCs on
+# its own MIDI channel (avoid 1-9, the APC40 banks). One [[joystick.banks]]
+# entry per moving-head bank; *_fine CCs are optional.
+# [joystick]
+# channel = 16
+# device = ""      # substring of the device name, empty = auto-detect
+# speed = 2.0
+# deadzone = 0.1
+# curve = 2.0
+# [[joystick.banks]]
+# pan = 20
+# tilt = 21
+# pan_fine = 22
+# tilt_fine = 23

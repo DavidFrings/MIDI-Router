@@ -1,5 +1,7 @@
+use crate::joystick::config::JoystickConfig;
 use crate::router::mapping_config::MappingConfig;
 use anyhow::{Result, anyhow};
+use log::warn;
 use serde::{Deserialize, Serialize};
 use std::fs;
 
@@ -13,6 +15,8 @@ pub(crate) struct Config {
     pub(crate) maps: MappingConfig,
     #[serde(rename = "api")]
     pub(crate) api: ApiConfig,
+    #[serde(default)]
+    pub(crate) joystick: Option<JoystickConfig>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -48,6 +52,12 @@ impl Config {
     pub fn new() -> Result<Self> {
         if let Ok(data) = fs::read_to_string("config.toml") {
             let config: Config = toml::from_str(&data)?;
+            if let Some(j) = &config.joystick {
+                j.validate()?;
+                if let Some(w) = j.channel_warning() {
+                    warn!("{w}");
+                }
+            }
 
             Ok(config)
         } else {
@@ -85,6 +95,7 @@ mod tests {
             assert_eq!(c.api.port, 80);
             assert_eq!(c.api.bind_address, "0.0.0.0");
             assert_eq!(c.api.pin, "");
+            assert_eq!(c.joystick, None);
         }
     }
 }
