@@ -68,6 +68,61 @@ Notes:
 - Default `port` is 80. If another program (e.g. IIS/HTTP.sys) uses it, change `port` in `config.toml`
   (then open `http://<PC-IP>:<port>/`). The TUI API log shows the bind error.
 
+## Joystick (moving heads)
+
+Optional: a Thrustmaster TCA Sidestick (Airbus Edition) steers moving-head pan and tilt as MIDI CCs.
+A fine mode drives the pan-fine and tilt-fine CCs, so each moving head has up to 4 faders.
+
+**Status:** joystick input is not active yet in this version. The `[joystick]` config, the TUI status
+line and the web remote view exist, but the stick always shows as "not connected". The input backend
+follows once the hardware test data from `tools/joystick-probe` is in.
+
+Without a `[joystick]` section the feature is off. With it, the router also runs without the stick and
+picks it up when it is plugged in.
+
+How it works:
+
+- The stick sets the speed of a fader, not its value. Below `deadzone` nothing moves. Full deflection
+  moves a fader across 0..127 in `speed` seconds. Every fader starts at 64 after a router start.
+- Each bank is one moving head with its own CCs. Every bank remembers its values and its fine flag.
+- The joystick has its own MIDI channel and banks, independent of the APC40 banks. Output goes to the
+  same `to_<software_name>` port.
+
+```toml
+[joystick]
+channel = 16            # 1..16
+device = "T.A320"       # optional, substring of the device name; empty/missing = first joystick
+speed = 2.0             # optional, seconds for 0..127 at full deflection
+deadzone = 0.1          # optional, 0..1
+curve = 2.0             # optional, exponent
+
+[[joystick.banks]]      # bank 1
+pan = 20
+tilt = 21
+pan_fine = 22           # optional
+tilt_fine = 23          # optional
+```
+
+At most 12 banks. CCs are 0..127. Invalid values fail config loading with a clear error.
+
+| Control | Action |
+| --- | --- |
+| Trigger (button 1) | Move only while held; releasing stops all movement |
+| Button 2 | Toggle fine/coarse for the current bank |
+| Hat left / right | Previous / next bank (wraps around) |
+| Base buttons 5-16 | Select bank 1-12 directly |
+| Everything else | Unused |
+
+Daslight hints:
+
+- Map the CCs on the joystick channel to the pan/tilt (and fine) faders.
+- Enable MIDI out (feedback) for those CCs. The router takes Daslight's value as the new position, so
+  scene changes or mouse moves in Daslight do not cause a jump on the next stick move.
+- To invert an axis, invert it in Daslight.
+
+`tools/joystick-probe/` is a console tool that logs what the stick sends. Run it on a PC with the stick
+and send back `joystick-probe-log.txt`.
+
 ## Testing without hardware
 
 `tools/apc40-sim/` is a browser-based APC40 mkII simulator that talks to the router over real MIDI.
