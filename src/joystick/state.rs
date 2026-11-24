@@ -138,6 +138,7 @@ impl JoystickState {
                 if !c {
                     self.trigger = false;
                     self.axes = [0.0; 2];
+                    self.hat_x = 0;
                 }
             }
         }
@@ -193,8 +194,11 @@ impl JoystickState {
                 {
                     continue;
                 }
-                changed |= bank.values[slot].round() != value as f32;
-                bank.values[slot] = value as f32;
+                // Keep the fractional accumulator when the rounded value already matches.
+                if bank.values[slot].round() as u8 != value {
+                    bank.values[slot] = value as f32;
+                    changed = true;
+                }
             }
         }
         changed
@@ -341,10 +345,26 @@ mod tests {
     #[test]
     fn slow_move_accumulates() {
         let (mut s, now) = held(0.19);
+        let mut out = vec![];
         for _ in 0..100 {
-            s.tick(0.01, now);
+            out.extend(s.tick(0.01, now));
         }
         assert_eq!(s.snapshot().values[0], Some(65));
+        assert!(out.contains(&(20, 65)));
+    }
+
+    #[test]
+    fn feedback_same_value_keeps_accumulator() {
+        let (mut s, t) = held(0.19);
+        for _ in 0..70 {
+            assert!(s.tick(0.01, t).is_empty());
+        }
+        assert!(!s.feedback(20, 64, t + Duration::from_millis(300)));
+        let mut out = vec![];
+        for _ in 0..30 {
+            out.extend(s.tick(0.01, t));
+        }
+        assert!(out.contains(&(20, 65)));
     }
 
     #[test]
@@ -429,6 +449,7 @@ mod tests {
         let (mut s, now) = held(1.0);
         s.tick(0.1, now);
         let v = s.snapshot().values[0];
+        assert_ne!(v, Some(64));
         btn(&mut s, 6);
         assert_eq!(s.snapshot().values[0], Some(64));
         btn(&mut s, 5);
@@ -470,7 +491,8 @@ mod tests {
     #[test]
     fn dt_is_clamped() {
         let (mut s, now) = held(1.0);
-        s.tick(10.0, now);
+        let out = s.tick(10.0, now);
         assert_eq!(s.snapshot().values[0], Some(70));
+        assert!(out.contains(&(20, 70)));
     }
 }
