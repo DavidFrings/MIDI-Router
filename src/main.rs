@@ -4,6 +4,7 @@ mod router;
 mod utils;
 
 use crate::api::auth::valid_pin;
+use crate::joystick::{device, state::JoystickState, thread::joystick_thread};
 use crate::router::remote::RemoteHub;
 use crate::utils::{
     config::Config,
@@ -52,6 +53,11 @@ fn init_threads(config: &Config, logs: (Receiver<String>, Receiver<String>)) -> 
     let restart = Arc::new(AtomicBool::new(false));
     let exit = Arc::new(AtomicBool::new(false));
     let hub = RemoteHub::new();
+    if let Some(cfg) = &config.joystick {
+        let state = Arc::new(Mutex::new(JoystickState::new(cfg.clone())));
+        let _ = hub.joystick.set(state.clone()); // hub is fresh, cannot be set yet
+        joystick_thread(exit.clone(), hub.clone(), state, device::open(&cfg.device));
+    }
 
     router_thread(
         restart.clone(),

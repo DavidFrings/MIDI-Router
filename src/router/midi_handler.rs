@@ -1,3 +1,4 @@
+use crate::joystick::state::JoystickState;
 use crate::router::{
     fader_state::{FaderState, controller_fader_index},
     remote::{GRID_NOTES, PadState, PageState, RemoteEvent, RemoteInput},
@@ -7,6 +8,7 @@ use crate::router::{
 use anyhow::Result;
 use anyhow::bail;
 use log::{debug, trace, warn};
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tokio::sync::broadcast;
 use wmidi::{
@@ -24,6 +26,7 @@ pub struct MidiHandler {
     led_controller: LedController,
     fader_state: FaderState,
     events: Option<broadcast::Sender<RemoteEvent>>,
+    joystick: Option<Arc<Mutex<JoystickState>>>,
 }
 
 impl MidiHandler {
@@ -34,11 +37,16 @@ impl MidiHandler {
             led_controller: LedController::new(),
             fader_state: FaderState::default(),
             events: None,
+            joystick: None,
         }
     }
 
     pub fn set_event_sender(&mut self, tx: broadcast::Sender<RemoteEvent>) {
         self.events = Some(tx);
+    }
+
+    pub fn set_joystick(&mut self, state: Arc<Mutex<JoystickState>>) {
+        self.joystick = Some(state);
     }
 
     pub fn handle_controller_msg(
@@ -235,6 +243,19 @@ impl MidiHandler {
         midi_message: MidiMessage,
         to_controller_connection: &mut OutputConnection,
     ) -> Result<()> {
+        // Lock order handler -> joystick; the joystick thread never takes the handler lock.
+        if let (ControlChange(channel, control, value), Some(joystick)) = (&midi_message, &self.joystick) {
+            let mut joystick = joystick.lock().unwrap();
+            if channel.index() + 1 == joystick.channel() {
+                if joystick.feedback(u8::from(*control), u8::from(*value), Instant::now())
+                    && let Some(events) = &self.events
+                {
+                    let _ = events.send(RemoteEvent::Joystick(joystick.snapshot()));
+                }
+                return Ok(());
+            }
+        }
+
         match midi_message {
             NoteOn(channel, note, velocity) => {
                 let momentary = self.mapping_config.is_momentary_note(note);
@@ -417,6 +438,26 @@ mod tests {
         // Unconnected outputs: sends are no-ops, state still updates.
         let (mut to_ctrl, mut to_sw) = (OutputConnection::new(), OutputConnection::new());
         handler.handle_controller_msg(msg, &mut to_ctrl, &mut to_sw).unwrap();
+    }
+
+    #[test]
+    fn joystick_feedback_is_taken_and_not_routed() {
+        let mut h = handler();
+        let (tx, mut rx) = broadcast::channel(16);
+        h.set_event_sender(tx);
+        let joystick = Arc::new(Mutex::new(JoystickState::new(
+            toml::from_str("channel = 16\nbanks = [{pan = 20, tilt = 21}]").unwrap(),
+        )));
+        h.set_joystick(joystick.clone());
+        let msg = ControlChange(Channel::Ch16, ControlFunction::from(U7::from_u8_lossy(21)), U7::from_u8_lossy(100));
+
+        let sent = feedback(&mut h, msg);
+
+        assert!(sent.is_empty());
+        assert_eq!(joystick.lock().unwrap().snapshot().values[1], Some(100));
+        let events: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+        assert!(events.iter().any(|e| matches!(e, RemoteEvent::Joystick(s) if s.values[1] == Some(100))));
+        assert!(!events.iter().any(|e| matches!(e, RemoteEvent::Fader { .. })));
     }
 
     #[test]

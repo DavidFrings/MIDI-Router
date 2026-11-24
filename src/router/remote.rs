@@ -1,8 +1,9 @@
+use crate::joystick::state::{JoystickSnapshot, JoystickState};
 use crate::router::{
     fader_state::FADER_COUNT, midi_handler::MidiHandler, output_connection::OutputConnection,
 };
 use serde::Serialize;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use tokio::sync::broadcast;
 
 /// Pushed to tablets. `page` is 1-based (`bank.index() + 1`).
@@ -17,6 +18,7 @@ pub enum RemoteEvent {
     },
     Fader { page: u8, index: usize, value: u8 },
     Resync,
+    Joystick(JoystickSnapshot),
 }
 
 pub enum RemoteInput {
@@ -55,6 +57,8 @@ pub struct RouterHandles {
 pub struct RemoteHub {
     router: Mutex<Option<RouterHandles>>,
     pub events: broadcast::Sender<RemoteEvent>,
+    /// Set once at startup when `[joystick]` is configured; outlives router restarts.
+    pub joystick: OnceLock<Arc<Mutex<JoystickState>>>,
 }
 
 impl RemoteHub {
@@ -62,6 +66,7 @@ impl RemoteHub {
         Arc::new(Self {
             router: Mutex::new(None),
             events: broadcast::channel(256).0,
+            joystick: OnceLock::new(),
         })
     }
 
@@ -114,5 +119,21 @@ mod tests {
         hub.detach();
 
         assert!(hub.handles().is_none());
+    }
+
+    #[test]
+    fn joystick_event_json() {
+        let snap = JoystickSnapshot {
+            connected: true,
+            bank: 1,
+            banks: 3,
+            fine: false,
+            values: [Some(64), Some(64), None, None],
+        };
+
+        assert_eq!(
+            serde_json::to_value(RemoteEvent::Joystick(snap)).unwrap(),
+            serde_json::json!({"type":"joystick","connected":true,"bank":1,"banks":3,"fine":false,"values":[64,64,null,null]})
+        );
     }
 }

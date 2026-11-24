@@ -16,6 +16,7 @@ pub enum Axis {
     Y,
 }
 
+#[allow(dead_code)] // constructed by the device backend (Task 7)
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum JoyInput {
     /// `index` is 1-based (manual numbering).

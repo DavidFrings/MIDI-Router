@@ -130,6 +130,10 @@ fn router_iteration(
 ) {
     debug!("Starting MIDIRouter...");
     let mut router = MidiRouter::new(config.clone(), hub.events.clone());
+    if let Some(joystick) = hub.joystick.get() {
+        // Before connect, so no Daslight feedback arrives unseen.
+        router.handles().handler.lock().unwrap().set_joystick(joystick.clone());
+    }
 
     match MidiRouter::connect(&mut router, controller, software) {
         Ok(_) => {
