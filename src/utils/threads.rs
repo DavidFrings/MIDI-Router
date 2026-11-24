@@ -1,6 +1,6 @@
 use crate::{
-    joystick::state::JoystickState,
     api::server::start_server,
+    joystick::state::JoystickState,
     router::{mapping_config::MappingConfig, midi_connection::MidiRouter, remote::RemoteHub},
     utils::{config::ApiConfig, tui::App},
 };

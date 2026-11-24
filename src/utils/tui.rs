@@ -153,7 +153,7 @@ impl Widget for &App {
             .constraints([Constraint::Percentage(60), Constraint::Percentage(40)].as_ref())
             .split(area);
 
-        let config_h = if self.joystick.is_some() { 8 } else { 6 };
+        let config_h = if self.joystick.is_some() { 9 } else { 6 };
         let bottom = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Length(config_h), Constraint::Min(0)].as_ref())
@@ -248,6 +248,7 @@ impl Widget for &App {
                     .on_black()
                     .dark_gray(),
             )
+            .wrap(Wrap { trim: true })
             .render(bottom[0], buf);
     }
 }
