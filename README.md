@@ -73,9 +73,9 @@ Notes:
 Optional: a Thrustmaster TCA Sidestick (Airbus Edition) steers moving-head pan and tilt as MIDI CCs.
 A fine mode drives the pan-fine and tilt-fine CCs, so each moving head has up to 4 faders.
 
-**Status:** joystick input is not active yet in this version. The `[joystick]` config, the TUI status
-line and the web remote view exist, but the stick always shows as "not connected". The input backend
-follows once the hardware test data from `tools/joystick-probe` is in.
+**Platform:** joystick input works on Windows. The router reads the stick as raw HID, so the router
+window does not need focus. Linux is not supported: there the stick always shows as "not connected".
+Twist and the throttle lever are ignored.
 
 Without a `[joystick]` section the feature is off. With it, the router also runs without the stick and
 picks it up when it is plugged in.
@@ -91,7 +91,7 @@ How it works:
 ```toml
 [joystick]
 channel = 16            # 1..16
-device = "T.A320"       # optional, substring of the device name; empty/missing = first joystick
+device = "T.A320"       # optional, case-sensitive substring of the device name; empty/missing = first Thrustmaster stick
 speed = 2.0             # optional, seconds for 0..127 at full deflection
 deadzone = 0.1          # optional, 0..1
 curve = 2.0             # optional, exponent
