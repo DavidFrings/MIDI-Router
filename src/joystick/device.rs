@@ -71,11 +71,13 @@ mod hid {
             let Some(api) = self.api.as_mut() else {
                 return Ok(None);
             };
+            // Runs at most once per second (poll's RETRY), and only while disconnected.
             api.refresh_devices()
                 .map_err(|e| format!("HID device scan failed: {e}"))?;
             let filter = self.filter.as_str();
             let Some(info) = api.device_list().find(|d| {
                 d.vendor_id() == tca::VID
+                    && tca::PIDS.contains(&d.product_id())
                     && d.usage_page() == 1
                     && matches!(d.usage(), 4 | 5)
                     && d.product_string().unwrap_or("").contains(filter)
@@ -124,7 +126,9 @@ mod hid {
                 }
             }
             let mut buf = [0u8; 64];
-            while let Some(dev) = &self.dev {
+            // Bounded so a device that never runs dry cannot stall the poll thread.
+            for _ in 0..64 {
+                let Some(dev) = &self.dev else { break };
                 match dev.read(&mut buf) {
                     Ok(0) => break,
                     Ok(n) => out.extend(self.parser.parse(&buf[..n])),

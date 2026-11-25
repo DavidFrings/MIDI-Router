@@ -91,7 +91,7 @@ How it works:
 ```toml
 [joystick]
 channel = 16            # 1..16
-device = "T.A320"       # optional, case-sensitive substring of the device name; empty/missing = first Thrustmaster stick
+device = "T.A320"       # optional, case-sensitive substring of the device name; empty/missing = first TCA Sidestick (Airbus Edition, Pilot or Copilot mode)
 speed = 2.0             # optional, seconds for 0..127 at full deflection
 deadzone = 0.1          # optional, 0..1
 curve = 2.0             # optional, exponent

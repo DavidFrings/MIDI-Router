@@ -3,6 +3,8 @@
 use super::state::{Axis, JoyInput};
 
 pub const VID: u16 = 0x044F;
+/// 0x0405 "T.A320 Pilot", 0x0406 "T.A320 Copilot" (the base's right/left-handed switch).
+pub const PIDS: [u16; 2] = [0x0405, 0x0406];
 
 /// Remembers the last report so `parse` only emits changes.
 #[derive(Default)]
