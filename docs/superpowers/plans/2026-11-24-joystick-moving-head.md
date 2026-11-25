@@ -220,7 +220,44 @@
 
 ### Task 7: Real joystick backend (blocked on the probe log)
 
-Decided after the friend's `joystick-probe-log.txt` arrives: gilrs (if background input works), else hidapi with the logged report layout, else SDL3. The controller amends this task with the exact mapping (raw codes for buttons 1..16, hat, X/Y range and sign) from the log before dispatching it. Deliverable: `device::open` returns a real source with hotplug (reconnect poll every 1 s for hidapi), emitting `Connected(true/false)`; mapping unit-tested from captured log samples.
+**Amended 2026-11-25 from the probe log** (user decisions: hidapi, Windows only, Y forward = tilt up, deadzone stays 10 %). The step-6 background test never ran (tester stayed in step 1), so gilrs is out: hidapi reads independent of window focus.
+
+Device facts (from log): `T.A320 Pilot`, VID `0x044F`, PID `0x0405`, usage page 1, usage 4. Input report, 64 bytes, report ID first (as hidapi returns it on Windows):
+- byte 0 = `0x01` (report id); ignore any other id or a report shorter than 11 bytes
+- bytes 1-2 X, bytes 3-4 Y: u16 little endian, 0..16383, centre 8192
+- byte 5 Rz (twist, noisy on the tester's stick: ignore), byte 6 slider (ignore)
+- byte 7 low nibble hat: 0 up, 1 up-right, 2 right, 3 down-right, 4 down, 5 down-left, 6 left, 7 up-left, anything else (15) = centred
+- bytes 8-10 buttons: bit k (byte 8 bit 0 = k 0) = button k+1, buttons 1..17 (17 = virtual throttle button)
+Rest noise measured: X ±60, Y up to +250 around 8192 (< 3 %), covered by the 10 % deadzone.
+
+**Files:**
+- Create: `src/joystick/tca.rs` (pure parser, all platforms)
+- Modify: `src/joystick/device.rs`, `src/joystick/mod.rs`, `src/joystick/state.rs` (drop `#[allow(dead_code)]` on `JoyInput`), `Cargo.toml` (`[target.'cfg(windows)'.dependencies] hidapi = "2"`), `Cargo.lock`, `README.md` (joystick is now active on Windows; remove the "not active yet" note)
+
+**Interfaces:**
+- Consumes: `JoyInput`, `Axis`, `JoystickSource` (Tasks 3/4).
+- Produces:
+  ```rust
+  // tca.rs
+  #[derive(Default)] pub struct TcaParser { .. }   // remembers last buttons/hat/x/y
+  impl TcaParser { pub fn parse(&mut self, report: &[u8]) -> Vec<JoyInput>; } // only changes
+  pub const VID: u16 = 0x044F;
+  ```
+  Normalisation: X `((raw as f32 - 8192.0) / 8191.0).clamp(-1.0, 1.0)` (+ = right); Y `((8192.0 - raw as f32) / 8192.0).clamp(-1.0, 1.0)` (+ = forward). Hat → `Hat { x, y }` with x/y in -1/0/1 (up = y +1, right = x +1).
+
+- [ ] **Step 1: Failing tests** in `tca.rs`, using these real reports from the log (hex, first 11 bytes suffice, pad the rest with 00):
+  - rest `01 04 20 2D 20 6C FF 0F 00 00 01` → first parse emits `Axis X` ≈ 0.0005, `Axis Y` ≈ -0.0055 and `Button{index: 17, pressed: true}`, no Hat (the parser starts with hat centred, buttons released, axes unset). A second identical parse → empty.
+  - x_min `01 AD 00 2B 22 51 FF 0F 00 00 01` → X ≈ -0.9789 (raw 173).
+  - x_max `01 FF 3F AE 1E 00 FF 0F 00 00 01` → X = 1.0 (raw 16383).
+  - btn1 `01 07 20 69 20 00 FF 0F 01 00 01` after rest → contains `Button{index: 1, pressed: true}`; then rest again → `Button{1, false}`.
+  - btn16 `01 17 20 DE 20 43 FF 0F 00 C0 01` → buttons 15 and 16 pressed (0xC0 = bits 6,7 of byte 9).
+  - hat_right `01 3A 20 10 21 05 FF 02 00 00 01` → `Hat{x: 1, y: 0}`; hat_down `... FF 04 01 00 01` → `Hat{x: 0, y: -1}` and Button 1 pressed; back to `0F` → `Hat{0,0}`.
+  - report id `0x02` or length 5 → empty, parser state unchanged.
+  - Button 2 is bit 1 of byte 8 (not exercised by the tester; covered by a synthetic report `01 00 20 00 20 80 80 0F 02 00 00`).
+- [ ] **Step 2: Run** `cargo test joystick::tca` → FAIL.
+- [ ] **Step 3: Implement** `TcaParser`. Then `device.rs`: `#[cfg(windows)] struct HidSource { api: Option<HidApi>, dev: Option<HidDevice>, parser: TcaParser, filter: String, next_try: Instant }`. `poll()`: when no device and `now >= next_try` (every 1 s): `refresh_devices`, pick the first device with VID `0x044F`, usage page 1, usage 4 or 5, and `product_string` containing `filter` (empty filter = any); open, `set_blocking_mode(false)`, emit `Connected(true)`, reset parser. With a device: drain `read` into a 64-byte buffer until it returns 0, feeding each report to the parser; on a read error drop the device, emit `Connected(false)`, log `warn!` once. `HidApi::new()` failure: log once, retry on the 1 s schedule. `open(device)` returns `HidSource` on Windows and `NoDevice` elsewhere (keep the shortcut comment for non-Windows). The source must be `Send` (check: `HidDevice` is Send).
+- [ ] **Step 4: Run** `cargo test --locked` on Linux (the Windows-only code is not compiled here). Windows compile + tests: push the branch, then `gh workflow run installer.yml --ref feat/joystick` and wait for green.
+- [ ] **Step 5: Commit** `feat(joystick): hidapi backend for the TCA sidestick (Windows)`.
 
 ### Task 8: Version bump + docs
 
